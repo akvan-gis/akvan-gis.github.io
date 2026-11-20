@@ -937,7 +937,7 @@ setBase(baseKey);
 
 /* ===================== 2. cyclone model ===================== */
 const KT=k=>Math.round(k*1.852*0.93);
-let BASEADV=DATA.advisories;
+let BASEADV=DATA.advisories; const SITE={};   // site-wide settings from config.json (hosted portal)
 function mergedTrack(src){
   const advs=BASEADV.filter(a=>a.src===src).sort((a,b)=>new Date(a.issued)-new Date(b.issued)); if(!advs.length) return null;
   const latest=advs[advs.length-1]; const obs=new Map();
@@ -1758,7 +1758,7 @@ const AI_TOOLS=[
 function aiSystem(){ return `You are the AI assistant inside the Pipili GIS Decision Support Portal, used by the Pipili block (Puri district, Odisha) control room during Cyclone Akvan. Officers ask operational questions; answer from the portal's data by calling tools, and use tools to show things on the map (zoom, highlight, open modules, layers, run scenarios).
 Rules: always use tools for facts and numbers; never invent figures. Keep answers short and practical (bullets fine), lead with the answer, give numbers with units and IST times. When you show something on the map, say so. Reply in the officer's language (English, Odia or Hindi). Model outputs are planning estimates: say so briefly when giving flood or risk numbers, and defer to IMD, SRC and Collector orders. If data is missing (e.g. elevation not loaded), say what is missing.
 Current time: ${fmtT(new Date())} IST. Track: ${ST.track.label}.`; }
-async function aiCall(messages){ const key=P.settings.akey; const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+async function aiCall(messages){ const key=P.settings.akey, relay=!key&&SITE.aiRelay; const r=await fetch(relay||'https://api.anthropic.com/v1/messages',{method:'POST',headers:relay?{'content-type':'application/json'}:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
   body:JSON.stringify({model:P.settings.amodel||'claude-sonnet-5-5',max_tokens:1500,system:aiSystem(),tools:AI_TOOLS.map(({name,description,input_schema})=>({name,description,input_schema})),messages})});
   const j=await r.json(); if(!r.ok) throw new Error((j.error&&j.error.message)||('HTTP '+r.status)); return j; }
 function aiAdd(role,html){ const box=$('aiLog'); const d=document.createElement('div'); d.className='aimsg '+role; d.innerHTML=html; box.appendChild(d); box.scrollTop=box.scrollHeight; return d; }
@@ -1767,7 +1767,7 @@ async function aiAsk(q){
   if(AI.busy||!q.trim()) return; aiAdd('user',esc(q)); $('aiIn').value='';
   AI.busy=true; const think=aiAdd('bot','<span class="note">Thinking…</span>');
   if(!ST.risk){ think.innerHTML='<span class="note">Preparing village risk analysis (first time only)…</span>'; await ensureRisk(); }
-  if(!P.settings.akey){ try{ think.innerHTML=localCommand(q); }catch(e){ think.innerHTML=esc('Could not do that: '+e.message); } AI.busy=false; return; } AI.msgs.push({role:'user',content:q});
+  if(!P.settings.akey&&!SITE.aiRelay){ try{ think.innerHTML=localCommand(q); }catch(e){ think.innerHTML=esc('Could not do that: '+e.message); } AI.busy=false; return; } AI.msgs.push({role:'user',content:q});
   try{ for(let step=0;step<8;step++){ const res=await aiCall(AI.msgs); AI.msgs.push({role:'assistant',content:res.content});
       const uses=res.content.filter(c=>c.type==='tool_use'); const txt=res.content.filter(c=>c.type==='text').map(c=>c.text).join('\n');
       if(!uses.length){ think.innerHTML=mdLite(txt||'(no answer)'); break; }
@@ -1794,7 +1794,7 @@ $('aiClose').onclick=()=>$('aiBox').classList.add('hide');
 $('aiForm').onsubmit=e=>{e.preventDefault(); aiAsk($('aiIn').value);};
 $('aiNew').onclick=()=>{AI.msgs=[]; $('aiLog').innerHTML=''; AI.hl.clearLayers(); renderAiHint();};
 function renderAiHint(){ if($('aiLog').children.length) return; const sug=['Which 10 villages are most at risk and why?','Zoom to Hatasahi and tell me its risk','What happens if 250 mm rain falls and the Bhargavi rises 1.5 m?','Which GPs should finish evacuation first?','When will squalls start in Teisipur?','Show the storm and open the radar'];
-  aiAdd('bot',`<b>Ask about the cyclone, flooding, villages, GPs or shelters.</b> I can zoom the map, highlight villages, run scenarios and open tools.${P.settings.akey?'':'<br><span class="note">No AI key set: simple commands only. Add an Anthropic API key on the Data tab for full answers.</span>'}<div class="sugs">${sug.map(s=>`<button class="btn sug">${esc(s)}</button>`).join('')}</div>`);
+  aiAdd('bot',`<b>Ask about the cyclone, flooding, villages, GPs or shelters.</b> I can zoom the map, highlight villages, run scenarios and open tools.${P.settings.akey||SITE.aiRelay?'':'<br><span class="note">No AI key set: simple commands only. Add an Anthropic API key on the Data tab for full answers.</span>'}<div class="sugs">${sug.map(s=>`<button class="btn sug">${esc(s)}</button>`).join('')}</div>`);
   $('aiLog').querySelectorAll('.sug').forEach(b=>b.onclick=()=>aiAsk(b.textContent)); }
 
 /* ===================== 9. boot ===================== */
@@ -1804,6 +1804,7 @@ loadLive().then(c=>{ if(c){ renderChips(); styleAdmin(); softRender(); } });
 // Site-wide settings for the hosted portal (config.json next to index.html): a Google Maps key restricted to this site's address,
 // so every visitor gets Google Streets/Satellite without entering a key. A key saved in this browser still takes priority.
 (async()=>{ if(!/^https?:/.test(location.protocol)) return; try{ const r=await fetch('config.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) return; const c=await r.json();
+  if(c.aiRelay) SITE.aiRelay=c.aiRelay;
   if(c.googleMapsKey&&!P.settings.gkey){ P.settings.gkey=c.googleMapsKey; P.settings.gkeySite=true; renderBaseButtons(); if(ST.module==='data') renderPanel(); } }catch(e){} })();
 </script>
 </body>
