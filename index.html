@@ -1970,8 +1970,45 @@ if(STATE){ for(const k of Object.keys(LY)) if(['Hydrology','Infrastructure','Ter
   const r=await fetch(SITE.aiRelay+'?visit='+id); if(!r.ok) return; const c=await r.json(); if(!c.unique) return;
   const sm=document.querySelector('.brand small'); if(!sm) return;
   const s=document.createElement('span'); s.id='visits'; s.title=nf(c.views)+' page views in total'; s.style.cssText='margin-left:6px;opacity:.85;white-space:nowrap';
-  s.innerHTML='· 👁 '+nf(c.unique)+' unique visitors'; sm.appendChild(s);
+  s.innerHTML='· 👁 '+nf(c.unique)+' unique visitors'; sm.appendChild(s); window.__VIS=c; document.dispatchEvent(new Event('akvan-visits'));
 }catch(e){} })();
+
+
+/* Thank-you note after Cyclone Akvan: the portal stays up as an archive. Usage figures as of 21 Nov 2026; visitors update live. */
+(()=>{ const ST_={visitors:513,views:1092,aiQ:25,aiCalls:63,wx:3916};
+  const css=document.createElement('style'); css.textContent=`#thx{position:fixed;inset:0;z-index:5000;background:rgba(5,10,20,.72);display:flex;align-items:center;justify-content:center;padding:14px}
+  #thx .box{background:#0f1a2b;border:1px solid #2a3b55;border-radius:14px;max-width:560px;width:100%;max-height:92vh;overflow:auto;padding:22px 22px 18px;color:#e6edf6;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  #thx h2{margin:0 0 4px;font-size:21px;font-weight:700;line-height:1.25} #thx .sub{color:#9fb0c6;font-size:13px;margin-bottom:12px}
+  #thx p{font-size:14px;line-height:1.5;margin:8px 0} #thx .g{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}
+  #thx .k{background:#16243a;border:1px solid #24364f;border-radius:10px;padding:10px 8px;text-align:center} #thx .k b{display:block;font-size:20px;color:#7cc4ff} #thx .k span{font-size:11.5px;color:#9fb0c6;line-height:1.3;display:block;margin-top:2px}
+  #thx .ds{font-size:12.5px;color:#c7d3e3;background:#132036;border-radius:10px;padding:10px 12px;line-height:1.55}
+  #thx .ft{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:14px;flex-wrap:wrap} #thx .cr{font-size:11.5px;color:#ffd166}
+  #thx button{background:#3b82f6;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer}
+  @media(max-width:480px){#thx .g{grid-template-columns:repeat(2,1fr)} #thx h2{font-size:18px} #thxTag .tt{display:none}}
+  #thxTag{margin-left:6px;background:#ffd166;color:#1a1300;border-radius:6px;padding:1px 7px;font-size:10.5px;font-weight:700;cursor:pointer;white-space:nowrap}`;
+  document.head.appendChild(css);
+  const vis=()=>window.__VIS||{unique:ST_.visitors,views:ST_.views};
+  function open(){ if($('thx')) return; const v=vis(); const d=document.createElement('div'); d.id='thx';
+    d.innerHTML=`<div class="box" role="dialog" aria-modal="true" aria-labelledby="thxH">
+      <h2 id="thxH">🙏 Thank you for your support</h2><div class="sub">Cyclone Akvan · 16–21 November 2026 · Odisha</div>
+      <p>Cyclone Akvan crossed the coast near Gopalpur on 20 November and has now weakened. Our sincere thanks to every officer, field functionary and team across Odisha who used this portal to plan evacuations, track the storm and support people on the ground.</p>
+      <div class="g">
+        <div class="k"><b id="thxV">${nf(v.unique)}</b><span>unique visitors</span></div>
+        <div class="k"><b id="thxP">${nf(v.views)}</b><span>portal views</span></div>
+        <div class="k"><b>${ST_.aiQ}+</b><span>questions answered by the AI assistant</span></div>
+        <div class="k"><b>${nf(ST_.wx)}</b><span>live weather data requests served</span></div>
+        <div class="k"><b>314</b><span>block portals (all 30 districts)</span></div>
+        <div class="k"><b>53,856</b><span>villages mapped</span></div></div>
+      <div class="ds"><b>Datasets used:</b> 30 districts, 314 blocks and 7,281 gram panchayats (LGD boundaries); 53,856 villages covering 3.58 crore people (Census 2011); IMD and JTWC cyclone track advisories; IMD warnings; ECMWF and GFS live weather forecasts (Open-Meteo); village-level evacuation status for Pipili.</div>
+      <p>The portal stays available as a record of Cyclone Akvan, with its data as it was. <b>It will be live again for the next cyclone.</b></p>
+      <div class="ft"><span class="cr">Developed by Block Finance Officer, Pipili</span><button id="thxGo">Explore the portal</button></div></div>`;
+    document.body.appendChild(d); const close=()=>{ d.remove(); try{sessionStorage.setItem('akvanThx','1');}catch(e){} };
+    $('thxGo').onclick=close; d.onclick=e=>{ if(e.target===d) close(); }; document.addEventListener('keydown',function k(e){ if(e.key==='Escape'){ close(); document.removeEventListener('keydown',k);} }); }
+  document.addEventListener('akvan-visits',()=>{ const v=vis(); if($('thxV')) $('thxV').textContent=nf(v.unique); if($('thxP')) $('thxP').textContent=nf(v.views); });
+  const h1=document.querySelector('.brand h1'); if(h1){ const t=document.createElement('span'); t.id='thxTag'; t.innerHTML='<span class="tt">Thank you </span>🙏'; t.title='Cyclone Akvan has passed: thank-you note and usage'; t.onclick=open; h1.appendChild(t); }
+  let seen=false; try{ seen=sessionStorage.getItem('akvanThx')==='1'; }catch(e){}
+  if(!seen) setTimeout(open,600);
+})();
 </script>
 <script>
 /* Loader: picks the Odisha state view or one block from the address (?b=<LGD block code>), fetches its data, then starts the portal. */
