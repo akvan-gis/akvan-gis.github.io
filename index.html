@@ -898,7 +898,10 @@ body.m input,body.m select{font-size:16px}
 const DATA=window.__DATA||JSON.parse(document.getElementById('pdata').textContent);
 /* Open-Meteo responses are cached in this browser so reloads don't hit the free service's rate limits. */
 async function omJSON(url,ttlMin){ const k='om:'+url; try{ const c=JSON.parse(localStorage.getItem(k)||'null'); if(c&&Date.now()-c.t<ttlMin*60e3) return c.d; }catch(e){}
-  const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status+(r.status===429?' (weather service busy, will retry)':'')); const d=await r.json();
+  let r=null; const qs=url.split('?')[1]; if(typeof SITE!=='undefined'&&SITE.ready) await SITE.ready;
+  if(typeof SITE!=='undefined'&&SITE.aiRelay){ try{ r=await fetch(SITE.aiRelay+'?om='+encodeURIComponent(qs)); if(!r.ok) r=null; }catch(e){ r=null; } }   // shared server-side cache (Google Cloud relay)
+  if(!r) r=await fetch(url);
+  if(!r.ok) throw new Error('HTTP '+r.status+(r.status===429?' (weather service busy, will retry)':'')); const d=await r.json();
   try{ for(let i=localStorage.length-1;i>=0;i--){ const kk=localStorage.key(i); if(kk&&kk.startsWith('om:')){ const c=JSON.parse(localStorage.getItem(kk)); if(Date.now()-c.t>6*3.6e6) localStorage.removeItem(kk); } } localStorage.setItem(k,JSON.stringify({t:Date.now(),d})); }catch(e){}
   return d; }
 const UNIT=DATA.unit||{kind:'block',id:'3544',name:'Pipili',district:'Puri',lat:20.115,lon:85.832};
@@ -1007,6 +1010,7 @@ setBase(baseKey);
 /* ===================== 2. cyclone model ===================== */
 const KT=k=>Math.round(k*1.852*0.93);
 let BASEADV=DATA.advisories; const SITE={};   // site-wide settings from config.json (hosted portal)
+SITE.ready=(async()=>{ if(!/^https?:/.test(location.protocol)) return; try{ const r=await fetch('config.json?t='+Date.now(),{cache:'no-store'}); if(r.ok) SITE.cfg=await r.json(); }catch(e){} if(SITE.cfg&&SITE.cfg.aiRelay) SITE.aiRelay=SITE.cfg.aiRelay; })();
 function mergedTrack(src){
   const advs=BASEADV.filter(a=>a.src===src).sort((a,b)=>new Date(a.issued)-new Date(b.issued)); if(!advs.length) return null;
   const latest=advs[advs.length-1]; const obs=new Map();
@@ -1917,7 +1921,7 @@ if(!STATE){ loadDEM(); loadOSM().then(()=>{AUTO.osmLast=Date.now();}); } loadWea
 loadLive().then(c=>{ if(c){ renderChips(); styleAdmin(); softRender(); } });
 // Site-wide settings for the hosted portal (config.json next to index.html): a Google Maps key restricted to this site's address,
 // so every visitor gets Google Streets/Satellite without entering a key. A key saved in this browser still takes priority.
-(async()=>{ if(!/^https?:/.test(location.protocol)) return; try{ const r=await fetch('config.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) return; const c=await r.json();
+(async()=>{ if(!/^https?:/.test(location.protocol)) return; try{ await SITE.ready; const c=SITE.cfg; if(!c) return;
   if(c.aiRelay) SITE.aiRelay=c.aiRelay;
   if(c.googleMapsKey&&!P.settings.gkey){ P.settings.gkey=c.googleMapsKey; P.settings.gkeySite=true; renderBaseButtons(); if(ST.module==='data') renderPanel(); } }catch(e){} })();
 /* ---------- phone layout ---------- */
