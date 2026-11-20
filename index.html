@@ -896,6 +896,11 @@ body.m input,body.m select{font-size:16px}
 <script id="appsrc" type="text/plain">"use strict";
 /* ===================== 0. data, utils, state ===================== */
 const DATA=window.__DATA||JSON.parse(document.getElementById('pdata').textContent);
+/* Open-Meteo responses are cached in this browser so reloads don't hit the free service's rate limits. */
+async function omJSON(url,ttlMin){ const k='om:'+url; try{ const c=JSON.parse(localStorage.getItem(k)||'null'); if(c&&Date.now()-c.t<ttlMin*60e3) return c.d; }catch(e){}
+  const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status+(r.status===429?' (weather service busy, will retry)':'')); const d=await r.json();
+  try{ for(let i=localStorage.length-1;i>=0;i--){ const kk=localStorage.key(i); if(kk&&kk.startsWith('om:')){ const c=JSON.parse(localStorage.getItem(kk)); if(Date.now()-c.t>6*3.6e6) localStorage.removeItem(kk); } } localStorage.setItem(k,JSON.stringify({t:Date.now(),d})); }catch(e){}
+  return d; }
 const UNIT=DATA.unit||{kind:'block',id:'3544',name:'Pipili',district:'Puri',lat:20.115,lon:85.832};
 const STATE=UNIT.kind==='state', CHILD=STATE?'Block':'GP', CHILDREN=STATE?'blocks':'GPs';
 const TZ='Asia/Kolkata', PIPILI=STATE?{lat:20.296,lon:85.825}:{lat:UNIT.lat,lon:UNIT.lon}, HH=4.5, GUST=1.3;
@@ -1132,8 +1137,8 @@ function computeRiverDist(){ const segs=lineSegs(['river','canal']); for(const f
 // 3c. Open-Meteo model forecasts (ECMWF IFS 0.25°, GFS) per GP HQ
 async function loadWeather(){
   setSrc('wx','busy','Loading ECMWF and GFS forecasts for each GP…');
-  try{ const LA=gps.map(f=>f.properties.hqLat.toFixed(3)), LO=gps.map(f=>f.properties.hqLon.toFixed(3));
-    const get=async m=>{ if(STATE&&m!=='ecmwf_ifs025') return gps.map(()=>null); const out=[]; for(let c=0;c<LA.length;c+=100){ const la=LA.slice(c,c+100).join(','), lo=LO.slice(c,c+100).join(','); const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${lo}&hourly=precipitation,wind_gusts_10m&models=${m}&timezone=Asia%2FKolkata&past_days=1&forecast_days=4`); if(!r.ok) throw new Error('HTTP '+r.status); const j=await r.json(); out.push(...(Array.isArray(j)?j:[j])); } return out; }; const __unused=async m=>{const r=await fetch('',{}); if(!r.ok) throw new Error('HTTP '+r.status); const j=await r.json(); return Array.isArray(j)?j:[j];};
+  try{ const cell=f=>(Math.round(f.properties.hqLat*4)/4).toFixed(2)+','+(Math.round(f.properties.hqLon*4)/4).toFixed(2); const keys=[...new Set(gps.map(cell))]; const LA=keys.map(k=>k.split(',')[0]), LO=keys.map(k=>k.split(',')[1]);
+    const get=async m=>{ if(STATE&&m!=='ecmwf_ifs025') return gps.map(()=>null); const out=[]; for(let c=0;c<LA.length;c+=100){ const la=LA.slice(c,c+100).join(','), lo=LO.slice(c,c+100).join(','); const j=await omJSON(`https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${lo}&hourly=precipitation,wind_gusts_10m&models=${m}&timezone=Asia%2FKolkata&past_days=1&forecast_days=4`,STATE?60:20); out.push(...(Array.isArray(j)?j:[j])); } const byKey={}; keys.forEach((k,i)=>byKey[k]=out[i]); return gps.map(f=>byKey[cell(f)]); }; const __unused=async m=>{const r=await fetch('',{}); if(!r.ok) throw new Error('HTTP '+r.status); const j=await r.json(); return Array.isArray(j)?j:[j];};
     const [ec,gf]=await Promise.all([get('ecmwf_ifs025'),get('gfs_seamless')]);
     const now=Date.now(); const out={};
     gps.forEach((f,i)=>{const pack=(j)=>{ if(!j||!j.hourly) return null; const t=j.hourly.time.map(s=>IST(s).getTime()), pr=j.hourly.precipitation, gu=j.hourly.wind_gusts_10m;
@@ -1141,7 +1146,7 @@ async function loadWeather(){
       return {t,pr,gu,next72,last24,gmax,gmaxT};};
       out[f.properties.gp]={ec:pack(ec[i]),gfs:pack(gf[i])};});
     ST.wx={gp:out,at:new Date()}; setSrc('wx','ok',`ECMWF and GFS forecasts loaded ${fmtT(ST.wx.at)} IST`); if(ST.module==='weather'||ST.module==='flood') renderPanel();
-  }catch(err){ setSrc('wx','err','Weather model data could not be loaded ('+err.message+').'); }
+  }catch(err){ setSrc('wx','err','Weather model data could not be loaded ('+err.message+').'); if(/429/.test(err.message)) setTimeout(()=>loadWeather(),90e3); }
 }
 // 3d. NASA GIBS satellite imagery
 function gibsDate(off){return new Intl.DateTimeFormat('en-CA',{timeZone:'UTC'}).format(new Date(Date.now()-off*864e5));}
@@ -1192,12 +1197,12 @@ function drawStorm(){ stormLayer.clearLayers(); const st=stormAt(ST.track,ST.t);
 
 /* ---- Windy-style animated wind: live GFS grid from Open-Meteo, Holland vortex fallback ---- */
 const MNAME={ecmwf_ifs025:'ECMWF',gfs_seamless:'GFS'}; const model=()=>P.settings.waModel||'ecmwf_ifs025';
-const WA=(()=>{ const G={lat0:8,lat1:24.5,lon0:78,lon1:94.5,d:0.75}; let grid=null, src='vortex', cv, bg, ctx, bctx, parts=[], raf=null, field=null, tSel=0, on=false, lastBg='';
+const WA=(()=>{ const G={lat0:8,lat1:24,lon0:78,lon1:94,d:1}; let grid=null, src='vortex', cv, bg, ctx, bctx, parts=[], raf=null, field=null, tSel=0, on=false, lastBg='';
   const PAL=[[0,[98,113,183]],[15,[57,97,159]],[25,[74,148,169]],[35,[77,141,123]],[45,[83,165,83]],[55,[166,190,41]],[65,[230,190,40]],[80,[230,140,30]],[95,[220,70,50]],[115,[190,40,90]],[140,[150,40,150]],[180,[110,60,200]]];
   const colAt=v=>{ for(let i=1;i<PAL.length;i++) if(v<PAL[i][0]){const [a,ca]=PAL[i-1],[b,cb]=PAL[i],t=(v-a)/(b-a); return ca.map((x,k)=>Math.round(x+(cb[k]-x)*t));} return PAL[PAL.length-1][1]; };
   async function load(){ try{ const la=[],lo=[]; for(let y=G.lat0;y<=G.lat1+1e-9;y+=G.d) for(let x=G.lon0;x<=G.lon1+1e-9;x+=G.d){la.push(y.toFixed(2)); lo.push(x.toFixed(2));}
       const nx=Math.round((G.lon1-G.lon0)/G.d)+1, ny=Math.round((G.lat1-G.lat0)/G.d)+1; const chunks=[]; for(let i=0;i<la.length;i+=200) chunks.push([la.slice(i,i+200),lo.slice(i,i+200)]);
-      const res=[]; for(const [a,b] of chunks){ const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${a.join(',')}&longitude=${b.join(',')}&hourly=wind_speed_10m,wind_direction_10m,pressure_msl&models=${model()}&timezone=GMT&past_days=1&forecast_days=3`); if(!r.ok) throw new Error('HTTP '+r.status); const j=await r.json(); res.push(...(Array.isArray(j)?j:[j])); }
+      const res=[]; for(const [a,b] of chunks){ const j=await omJSON(`https://api.open-meteo.com/v1/forecast?latitude=${a.join(',')}&longitude=${b.join(',')}&hourly=wind_speed_10m,wind_direction_10m&models=${model()}&timezone=GMT&past_days=1&forecast_days=3`,110); res.push(...(Array.isArray(j)?j:[j])); }
       const times=res[0].hourly.time.map(s=>Date.parse(s+'Z')), nt=times.length, U=new Float32Array(nt*nx*ny), V=new Float32Array(nt*nx*ny), PR=new Float32Array(nt*nx*ny).fill(NaN);
       res.forEach((j,k)=>{ const sp=j.hourly.wind_speed_10m, dr=j.hourly.wind_direction_10m; for(let t=0;t<nt;t++){ const s=sp[t]||0, a=(dr[t]||0)*Math.PI/180; U[t*nx*ny+k]=-s*Math.sin(a); V[t*nx*ny+k]=-s*Math.cos(a); const pm=j.hourly.pressure_msl; if(pm&&pm[t]!=null) PR[t*nx*ny+k]=pm[t];} });
       grid={times,nx,ny,U,V,PR,at:new Date(),model:model()}; src='gfs'; field=null; setSrc('wind','ok',`Live wind and pressure (${MNAME[model()]} via Open-Meteo, ${nx*ny} points) loaded ${fmtT(grid.at)} IST`); }
