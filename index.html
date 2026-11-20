@@ -776,6 +776,7 @@ textarea{min-height:90px;font-family:var(--mono);font-size:12px}
 .aimsg.user{align-self:flex-end;background:var(--accent);color:#fff}
 .aimsg.bot{align-self:flex-start;background:var(--chrome3);border:1px solid var(--line)}
 .aimsg .li{padding-left:4px}
+.aitbl{border-collapse:collapse;margin:6px 0;font-size:12px;width:100%}.aitbl th,.aitbl td{border:1px solid var(--line);padding:3px 6px;text-align:left;white-space:nowrap}.aitbl th{background:var(--chrome2)}
 .sugs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.sugs .btn{font-size:11.5px;font-weight:500;text-align:left}
 #aiForm{display:flex;gap:6px;padding:8px;border-top:1px solid var(--line)}
 #timeline{left:140px}
@@ -1806,7 +1807,7 @@ const AI_TOOLS=[
  {name:'set_basemap',description:'Change basemap: sat | streets | terrain | hill | dark | gmap (Google Streets) | gsat (Google Satellite, needs Google key).',input_schema:{type:'object',properties:{basemap:{type:'string'}},required:['basemap']},run:({basemap})=>{ if(!BASE[basemap]||(BASE[basemap].g&&!P.settings.gkey)) return {error:'not available'}; setBase(basemap); return {basemap};}},
  {name:'set_cyclone_view',description:'Set cyclone scenario (IMD | JTWC | WC worst case) and/or move the storm timeline to a time (IST, e.g. "2026-11-20T12:00") or "now". Opens the Cyclone module.',input_schema:{type:'object',properties:{scenario:{type:'string',enum:['IMD','JTWC','WC']},time_ist:{type:'string'}}},
   run:(a)=>{ if(a.scenario){ST.scen=a.scenario; computeCyclone(); drawTrack();} go('cyclone'); if(a.time_ist){ if(a.time_ist==='now'){ST.follow=true; setTime(Date.now());} else {ST.follow=false; setTime(IST(a.time_ist.slice(0,16)).getTime());}} const st=stormAt(ST.track,ST.t);
-   return {scenario:ST.scen,time_ist:fmtT(new Date(ST.t)),storm:st?{lat:+st.lat.toFixed(2),lon:+st.lon.toFixed(2),wind_kmh:Math.round(st.v),km_from_pipili:Math.round(dist(st,PIPILI))}:null,block_peak_gust_kmh:Math.round(Math.max(...Object.values(ST.gpImp).map(x=>x.gPeak)))};}},
+   return {scenario:ST.scen,map_note:'selected path is the coloured track; the other paths stay visible as thin dotted lines with name tags',time_ist:fmtT(new Date(ST.t)),storm:st?{lat:+st.lat.toFixed(2),lon:+st.lon.toFixed(2),wind_kmh:Math.round(st.v),km_from_pipili:Math.round(dist(st,PIPILI))}:null,block_peak_gust_kmh:Math.round(Math.max(...Object.values(ST.gpImp).map(x=>x.gPeak)))};}},
  {name:'compare_tracks',description:'Compare the three cyclone paths (IMD official = normal, JTWC, and the reasonable worst case that shifts the IMD forecast toward Pipili inside the cone). Returns, for each path, where the storm is now, distance from Pipili, landfall time/place, peak gust and squall onset in Pipili block; plus the latest observed fixes from IMD and JTWC with how far each fix is from each path. Use this to answer whether the storm is following the normal or worst-case path.',input_schema:{type:'object',properties:{show_on_map:{type:'string',enum:['IMD','JTWC','WC']}}},
   run:(a)=>{ const now=Date.now(), keep=ST.scen, out={};
    for(const sc of ['IMD','JTWC','WC']){ const tr=scenarioTrack(sc); if(!tr){ out[sc]={available:false}; continue; } ST.scen=sc; computeCyclone(); const im=Object.values(ST.gpImp);
@@ -1820,7 +1821,7 @@ const AI_TOOLS=[
    const fixes=[]; for(const src of ['IMD','JTWC']){ const advs=BASEADV.filter(x=>x.src===src).sort((x,y)=>new Date(y.issued)-new Date(x.issued)); const ob=advs.length?advs[0].points.filter(p=>p.kind==='obs').map(p=>({...p,ts:IST(p.t).getTime()})).sort((x,y)=>y.ts-x.ts)[0]:null;
      if(ob) fixes.push({source:src,bulletin:advs[0].label,fix_time_ist:fmtT(new Date(ob.ts)),hours_old:Math.round((now-ob.ts)/3.6e6),lat:ob.lat,lon:ob.lon,
        km_from_each_path_at_that_time:Object.fromEntries(['IMD','JTWC','WC'].map(sc=>{const tr=scenarioTrack(sc); const s2=tr&&stormAt(tr,ob.ts); return [sc,s2?Math.round(dist(s2,ob)):null];}))}); }
-   return {paths:out,latest_observed_fixes:fixes,map_shows:ST.scen,note:'The worst case is a planning scenario, not a forecast. Which path is being followed can only be judged from new observed fixes; if the newest fix is many hours old, say so.'}; }},
+   return {paths:out,latest_observed_fixes:fixes,map_shows:ST.scen+' as the main coloured track; the other two paths stay visible as thin dotted lines with name tags',note:'The worst case is a planning scenario, not a forecast. Which path is being followed can only be judged from new observed fixes; if the newest fix is many hours old, say so.'}; }},
  {name:'get_weather_forecast',description:'ECMWF and GFS forecast for a GP (or all GPs): rain next 72 h, rain last 24 h, max gust.',input_schema:{type:'object',properties:{gp:{type:'string'}}},
   run:({gp})=>{ if(!ST.wx) return {error:'forecasts not loaded'}; const one=g=>{const w=ST.wx.gp[g]; return {gp:g,ecmwf_rain_next72_mm:w.ec?Math.round(w.ec.next72):null,gfs_rain_next72_mm:w.gfs?Math.round(w.gfs.next72):null,rain_last24_mm:w.ec?Math.round(w.ec.last24):null,ecmwf_max_gust_kmh:w.ec?Math.round(w.ec.gmax):null,max_gust_time_ist:w.ec&&w.ec.gmaxT?fmtT(new Date(w.ec.gmaxT)):null};};
    if(gp){const g=findGP(gp); if(!g) return {error:'GP not found'}; return one(g);} return {updated_ist:fmtT(ST.wx.at),gps:gps.map(f=>one(f.properties.gp))};}},
@@ -1836,7 +1837,11 @@ async function aiCall(messages){ const key=P.settings.akey, relay=!key&&SITE.aiR
   body:JSON.stringify({model:P.settings.amodel||'claude-sonnet-5-5',max_tokens:2000,system:AI.sys||(AI.sys=aiSystem()),tools:AI_TOOLS.map(({name,description,input_schema})=>({name,description,input_schema})),messages})});
   const j=await r.json(); if(!r.ok) throw new Error((j.error&&j.error.message)||('HTTP '+r.status)); return j; }
 function aiAdd(role,html){ const box=$('aiLog'); const d=document.createElement('div'); d.className='aimsg '+role; d.innerHTML=html; box.appendChild(d); box.scrollTop=box.scrollHeight; return d; }
-function mdLite(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/^#{1,3} (.+)$/gm,'<b>$1</b>').replace(/^[-•] (.+)$/gm,'<div class="li">• $1</div>').replace(/<\/div>\n/g,'</div>').replace(/\n/g,'<br>'); }
+function mdTable(t){ return t.replace(/(^\|.*\|[ \t]*\n\|[ \t:|-]+\|[ \t]*\n(?:\|.*\|[ \t]*(?:\n|$))+)/gm,blk=>{ const rows=blk.trim().split('\n').filter((r,i)=>i!==1).map(r=>r.replace(/^\||\|$/g,'').split('|').map(c=>c.trim()));
+  return '\u0000T'+JSON.stringify(rows)+'\u0000'; }); }
+function mdLite(t){ const parts=mdTable(t).split('\u0000'); return parts.map(p=>p.startsWith('T[')?(r=>`<div style="overflow-x:auto"><table class="aitbl"><thead><tr>${r[0].map(c=>`<th>${mdInline(c)}</th>`).join('')}</tr></thead><tbody>${r.slice(1).map(x=>`<tr>${x.map(c=>`<td>${mdInline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`)(JSON.parse(p.slice(1))):mdBlock(p)).join(''); }
+function mdInline(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'); }
+function mdBlock(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/^#{1,3} (.+)$/gm,'<b>$1</b>').replace(/^[-•] (.+)$/gm,'<div class="li">• $1</div>').replace(/<\/div>\n/g,'</div>').replace(/\n/g,'<br>'); }
 async function aiAsk(q){
   if(AI.busy||!q.trim()) return; aiAdd('user',esc(q)); $('aiIn').value='';
   AI.busy=true; const think=aiAdd('bot','<span class="note">Thinking…</span>');
