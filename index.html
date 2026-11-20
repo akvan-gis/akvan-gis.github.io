@@ -689,6 +689,8 @@ header{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding:8px 14p
 .brand svg{flex:none}
 .brand h1{margin:0;font:700 17px/1.1 var(--display);letter-spacing:.01em}
 .brand small{display:block;font:400 11.5px var(--body);color:var(--muted)}
+.credit{font:500 10.5px/1.3 var(--body);color:#ffd166;margin-top:2px;max-width:460px}.credit .cs{display:none}
+body.m .credit{max-width:calc(100vw - 70px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:9.5px;margin-top:1px}body.m .credit .cl{display:none}body.m .credit .cs{display:inline}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
 .chip{background:var(--chrome2);border:1px solid var(--line);border-radius:6px;padding:4px 10px;min-width:110px}
 .chip span{display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
@@ -859,7 +861,7 @@ body.m input,body.m select{font-size:16px}
 <div id="app">
   <header>
     <div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#16243a" stroke="#3d8bfd"/><circle cx="16" cy="16" r="4" fill="none" stroke="#7cc4ff" stroke-width="2.4"/><path d="M16 12c0-5 4-7 8-7M16 20c0 5-4 7-8 7" fill="none" stroke="#7cc4ff" stroke-width="2.4" stroke-linecap="round"/></svg>
-      <div><h1>Pipili GIS Decision Support Portal</h1><small>Cyclone Akvan · Pipili block, Puri district, Odisha</small></div></div>
+      <div><h1>Pipili GIS Decision Support Portal</h1><small>Cyclone Akvan · Pipili block, Puri district, Odisha</small><div class="credit" title="Developed by the Block Finance Officer, Pipili. This portal is for information only. Always check and follow the official orders and advisories of the District Collectorate, OSDMA, SRC and IMD."><span class="cl">Developed by Block Finance Officer, Pipili · For information only. Always check and follow official orders of the Collectorate, OSDMA and IMD.</span><span class="cs">By BFO Pipili · Info only, follow Collectorate/OSDMA orders</span></div></div></div>
     <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap"><div class="chips" id="chips" style="margin-left:0"></div><button class="chip" id="liveChip" title="Refresh now" style="cursor:pointer;text-align:left;color:inherit;font:inherit"></button></div>
   </header>
   <nav id="nav" aria-label="Modules"></nav>
