@@ -851,7 +851,7 @@ const LVL=[{k:'low',n:'Low'},{k:'mod',n:'Moderate'},{k:'high',n:'High'},{k:'sev'
 const LVLC=['#3fae6a','#e6b325','#f07b2c','#e5383b'];
 const store={get(){try{return JSON.parse(localStorage.getItem('pipiliPortal.v1')||'{}');}catch(e){return {};}},set(o){try{localStorage.setItem('pipiliPortal.v1',JSON.stringify(o));}catch(e){}}};
 const P=Object.assign({shelters:{},incidents:[],settings:{}},store.get());
-function save(){store.set({shelters:P.shelters,incidents:P.incidents,settings:P.settings});}
+function save(){ const st={...P.settings}; if(st.gkeySite){ delete st.gkey; delete st.gkeySite; } store.set({shelters:P.shelters,incidents:P.incidents,settings:st});}
 const ST={ module:'overview', scen:'IMD', t:Date.now(), follow:true, playing:null, track:null, gpImp:{}, vImp:{},
   grid:null, osm:null, wx:null, sim:null, breach:null, mode:null, src:{dem:'idle',osm:'idle',wx:'idle',gibs:'idle',wind:'idle'}, srcMsg:{},
   t0:IST('2026-11-18T00:00').getTime(), t1:IST('2026-11-21T18:00').getTime(), simP:{rain:115.6,keep:50,rise:0,bH:2,bLoss:0.3,bReach:8,thr:0.3,useWx:false} };
@@ -1543,7 +1543,7 @@ data(){ return `<h2>Data &amp; export</h2>
    <label class="f" style="margin-top:8px">Model<select id="amodel">${AI_MODELS.map(([k,n])=>`<option value="${k}" ${(P.settings.amodel||'claude-sonnet-5-5')===k?'selected':''}>${n}</option>`).join('')}</select></label>
    <p class="note" style="margin-top:6px">Create a key at console.anthropic.com (API keys) and set a monthly spend limit there. The key is stored only in this browser and sent only to Anthropic. Use it on control-room laptops only; anyone with this browser can use it. Questions are answered from the portal's own data; the AI can zoom, highlight, run scenarios and open tools.</p></div>
   <h3>Google Maps</h3><div class="card"><label class="f" for="gkey">Google Maps API key (enables Google Streets and Google Satellite)</label>
-   <div style="display:flex;gap:6px;margin-top:4px"><input type="text" id="gkey" value="${esc(P.settings.gkey||'')}" placeholder="AIza…" autocomplete="off" spellcheck="false"><button class="btn primary" id="gkeySave">Save</button>${P.settings.gkey?'<button class="btn" id="gkeyDel">Remove</button>':''}</div>
+   <div style="display:flex;gap:6px;margin-top:4px"><input type="text" id="gkey" value="${P.settings.gkeySite?'':esc(P.settings.gkey||'')}" ${P.settings.gkeySite?'placeholder="Using the site-wide key"':''} placeholder="AIza…" autocomplete="off" spellcheck="false"><button class="btn primary" id="gkeySave">Save</button>${P.settings.gkey?'<button class="btn" id="gkeyDel">Remove</button>':''}</div>
    <p class="note" style="margin-top:6px">${GOOG.err?`<span style="color:var(--sev)">${esc(GOOG.err)}</span><br>`:''}In Google Cloud Console: create or choose a project with billing, enable <b>Map Tiles API</b>, create an API key and restrict it to the Map Tiles API. The key is kept only in this browser. Google's monthly free usage normally covers a block control room. Clicking a village or shelter opens it in Google Maps without any key.</p></div>
   <h3>Load your own data</h3><div class="card"><label class="f">Better elevation model (GeoTIFF: CartoDEM, ALOS, LiDAR; WGS84 or UTM 45N)<input type="file" id="demFile" accept=".tif,.tiff"></label>
    <label class="f" style="margin-top:8px">Vector layer (GeoJSON, or CSV with lat/lon) as<select id="vecType"><option value="river">River</option><option value="canal">Canal</option><option value="drain">Drain</option><option value="embank">Embankment</option><option value="road">Road</option></select></label><input type="file" id="vecFile" accept=".geojson,.json,.csv" style="margin-top:6px"><p class="note" id="vecMsg">${esc(ST.vecMsg||'')}</p></div>
@@ -1591,7 +1591,7 @@ function bindPanel(){ const el=$('panel'); const on=(id,ev,fn)=>{const x=$(id); 
   on('akeySave','onclick',()=>{const v=$('akey').value.trim(); if(v) P.settings.akey=v; else delete P.settings.akey; save(); renderPanel();});
   on('akeyDel','onclick',()=>{delete P.settings.akey; save(); renderPanel();});
   on('amodel','onchange',e=>{P.settings.amodel=e.target.value; save();});
-  on('gkeySave','onclick',()=>{const v=$('gkey').value.trim(); P.settings.gkey=v||undefined; GOOG.sessions={}; GOOG.err=''; save(); renderBaseButtons(); if(v) setBase('gsat'); renderPanel();});
+  on('gkeySave','onclick',()=>{const v=$('gkey').value.trim(); P.settings.gkey=v||undefined; delete P.settings.gkeySite; GOOG.sessions={}; GOOG.err=''; save(); renderBaseButtons(); if(v) setBase('gsat'); renderPanel();});
   on('gkeyDel','onclick',()=>{delete P.settings.gkey; GOOG.sessions={}; save(); setBase('sat'); renderPanel();});
   on('autoOn','onchange',e=>{P.settings.autoOn=e.target.checked; save(); scheduleAuto(); renderAutoStatus(); tickLive();});
   on('autoMin','onchange',e=>{AUTO.min=+e.target.value; P.settings.autoMin=AUTO.min; save(); scheduleAuto(); renderAutoStatus(); tickLive();});
@@ -1801,6 +1801,10 @@ function renderAiHint(){ if($('aiLog').children.length) return; const sug=['Whic
 computeCyclone(); drawTrack(); renderChips(); styleAdmin(); renderLegend(); go('overview'); setTime(Date.now());
 loadDEM(); loadOSM().then(()=>{AUTO.osmLast=Date.now();}); loadWeather().then(()=>{AUTO.wxLast=Date.now(); AUTO.last=new Date(); scheduleAuto(); renderAutoStatus();});
 loadLive().then(c=>{ if(c){ renderChips(); styleAdmin(); softRender(); } });
+// Site-wide settings for the hosted portal (config.json next to index.html): a Google Maps key restricted to this site's address,
+// so every visitor gets Google Streets/Satellite without entering a key. A key saved in this browser still takes priority.
+(async()=>{ if(!/^https?:/.test(location.protocol)) return; try{ const r=await fetch('config.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) return; const c=await r.json();
+  if(c.googleMapsKey&&!P.settings.gkey){ P.settings.gkey=c.googleMapsKey; P.settings.gkeySite=true; renderBaseButtons(); if(ST.module==='data') renderPanel(); } }catch(e){} })();
 </script>
 </body>
 </html>
