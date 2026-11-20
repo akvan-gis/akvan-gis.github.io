@@ -937,7 +937,7 @@ setBase(baseKey);
 
 /* ===================== 2. cyclone model ===================== */
 const KT=k=>Math.round(k*1.852*0.93);
-const BASEADV=DATA.advisories;
+let BASEADV=DATA.advisories;
 function mergedTrack(src){
   const advs=BASEADV.filter(a=>a.src===src).sort((a,b)=>new Date(a.issued)-new Date(b.issued)); if(!advs.length) return null;
   const latest=advs[advs.length-1]; const obs=new Map();
@@ -1648,12 +1648,21 @@ function villagePopup(i,ll){ const p=villages[i].properties, a=ST.alloc&&ST.allo
 /* ===================== 8b. auto refresh ===================== */
 const AUTO={min:+P.settings.autoMin||5, last:null, next:null, timer:null, osmLast:0, wxLast:0, busy:false};
 if(P.settings.autoOn===undefined) P.settings.autoOn=true;
+// When hosted (GitHub Pages), pick up live.json from the same site: evacuation figures, advisories, warnings.
+async function loadLive(){ if(!/^https?:/.test(location.protocol)) return false;
+  try{ const r=await fetch('live.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) return false; const j=await r.json(); let ch=false;
+    if(j.gpState&&j.snapshot&&j.snapshot!==DATA.snapshot){ DATA.gpState=j.gpState; DATA.snapshot=j.snapshot; ch=true; }
+    if(Array.isArray(j.advisories)&&j.advisories.length&&JSON.stringify(j.advisories)!==JSON.stringify(BASEADV)){ BASEADV=DATA.advisories=j.advisories; ch=true; }
+    if(Array.isArray(j.warnings)) for(const w of j.warnings) if(!DATA.warnings.some(x=>x.t===w.t&&x.text===w.text)) DATA.warnings.push(w);
+    if(ch){ computeCyclone(); drawTrack(); setTime(ST.follow?Date.now():ST.t); }
+    ST.liveAt=new Date(); return ch; }catch(e){ console.warn('live.json',e); return false; } }
 async function autoRefresh(reason){
   if(AUTO.busy) return; AUTO.busy=true;
   try{
+    await loadLive();
     // model forecasts change only every few hours; fetch at most every 15 min to stay within Open-Meteo's free limits
     if(reason==='manual'||Date.now()-AUTO.wxLast>=15*60e3||ST.src.wx==='err'){ await loadWeather(); AUTO.wxLast=Date.now(); }
-    if(!WA.grid()||Date.now()-WA.grid().at>30*60e3) await WA.load();
+    if(!WA.grid()||Date.now()-WA.grid().at>2*3.6e6) await WA.load();   // 529-point grid: keep well inside Open-Meteo's daily limit
     LY.imerg.layer.setUrl(imergUrl()); LY.viirs.layer.setUrl(viirsUrl());   // newest satellite rain and imagery
     if(ST.src.osm==='err'||Date.now()-AUTO.osmLast>6*3.6e6){ AUTO.osmLast=Date.now(); await loadOSM(); }   // retry OSM if it failed; else every 6 h
     if(ST.src.dem==='err') await loadDEM();               // retry elevation if it failed
@@ -1791,6 +1800,7 @@ function renderAiHint(){ if($('aiLog').children.length) return; const sug=['Whic
 /* ===================== 9. boot ===================== */
 computeCyclone(); drawTrack(); renderChips(); styleAdmin(); renderLegend(); go('overview'); setTime(Date.now());
 loadDEM(); loadOSM().then(()=>{AUTO.osmLast=Date.now();}); loadWeather().then(()=>{AUTO.wxLast=Date.now(); AUTO.last=new Date(); scheduleAuto(); renderAutoStatus();});
+loadLive().then(c=>{ if(c){ renderChips(); styleAdmin(); softRender(); } });
 </script>
 </body>
 </html>
