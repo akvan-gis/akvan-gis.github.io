@@ -1807,6 +1807,20 @@ const AI_TOOLS=[
  {name:'set_cyclone_view',description:'Set cyclone scenario (IMD | JTWC | WC worst case) and/or move the storm timeline to a time (IST, e.g. "2026-11-20T12:00") or "now". Opens the Cyclone module.',input_schema:{type:'object',properties:{scenario:{type:'string',enum:['IMD','JTWC','WC']},time_ist:{type:'string'}}},
   run:(a)=>{ if(a.scenario){ST.scen=a.scenario; computeCyclone(); drawTrack();} go('cyclone'); if(a.time_ist){ if(a.time_ist==='now'){ST.follow=true; setTime(Date.now());} else {ST.follow=false; setTime(IST(a.time_ist.slice(0,16)).getTime());}} const st=stormAt(ST.track,ST.t);
    return {scenario:ST.scen,time_ist:fmtT(new Date(ST.t)),storm:st?{lat:+st.lat.toFixed(2),lon:+st.lon.toFixed(2),wind_kmh:Math.round(st.v),km_from_pipili:Math.round(dist(st,PIPILI))}:null,block_peak_gust_kmh:Math.round(Math.max(...Object.values(ST.gpImp).map(x=>x.gPeak)))};}},
+ {name:'compare_tracks',description:'Compare the three cyclone paths (IMD official = normal, JTWC, and the reasonable worst case that shifts the IMD forecast toward Pipili inside the cone). Returns, for each path, where the storm is now, distance from Pipili, landfall time/place, peak gust and squall onset in Pipili block; plus the latest observed fixes from IMD and JTWC with how far each fix is from each path. Use this to answer whether the storm is following the normal or worst-case path.',input_schema:{type:'object',properties:{show_on_map:{type:'string',enum:['IMD','JTWC','WC']}}},
+  run:(a)=>{ const now=Date.now(), keep=ST.scen, out={};
+   for(const sc of ['IMD','JTWC','WC']){ const tr=scenarioTrack(sc); if(!tr){ out[sc]={available:false}; continue; } ST.scen=sc; computeCyclone(); const im=Object.values(ST.gpImp);
+     const st=stormAt(tr,now), lf=tr.pts.find(p=>p.note&&/landfall/i.test(p.note))||tr.pts.filter(p=>p.ts>tr.lastObsT).reduce((m,p)=>!m||dist(p,PIPILI)<dist(m,PIPILI)?p:m,null);
+     const on=im.map(x=>x.tOnset).filter(Boolean).sort((x,y)=>x-y)[0];
+     out[sc]={label:sc==='WC'?'Reasonable worst case (hypothetical, IMD forecast shifted toward Pipili within the cone)':tr.label, storm_now:st?{lat:+st.lat.toFixed(2),lon:+st.lon.toFixed(2),wind_kmh:Math.round(st.v),km_from_pipili:Math.round(dist(st,PIPILI))}:null,
+       landfall_or_closest:lf?{time_ist:fmtT(new Date(lf.ts)),lat:+lf.lat.toFixed(2),lon:+lf.lon.toFixed(2),note:lf.note||'closest point to Pipili'}:null,
+       closest_approach_km:Math.round(Math.min(...tr.pts.filter(p=>p.ts>=now-6*3.6e6).map(p=>dist(p,PIPILI)))),
+       block_peak_gust_kmh:Math.round(Math.max(...im.map(x=>x.gPeak))), squalls_from_ist:on?fmtT(new Date(on)):null}; }
+   ST.scen=a.show_on_map||keep; computeCyclone(); drawTrack(); setTime(ST.follow?Date.now():ST.t); if(a.show_on_map){ go('cyclone'); map.fitBounds([[15,82.5],[21.5,88]]); }
+   const fixes=[]; for(const src of ['IMD','JTWC']){ const advs=BASEADV.filter(x=>x.src===src).sort((x,y)=>new Date(y.issued)-new Date(x.issued)); const ob=advs.length?advs[0].points.filter(p=>p.kind==='obs').map(p=>({...p,ts:IST(p.t).getTime()})).sort((x,y)=>y.ts-x.ts)[0]:null;
+     if(ob) fixes.push({source:src,bulletin:advs[0].label,fix_time_ist:fmtT(new Date(ob.ts)),hours_old:Math.round((now-ob.ts)/3.6e6),lat:ob.lat,lon:ob.lon,
+       km_from_each_path_at_that_time:Object.fromEntries(['IMD','JTWC','WC'].map(sc=>{const tr=scenarioTrack(sc); const s2=tr&&stormAt(tr,ob.ts); return [sc,s2?Math.round(dist(s2,ob)):null];}))}); }
+   return {paths:out,latest_observed_fixes:fixes,map_shows:ST.scen,note:'The worst case is a planning scenario, not a forecast. Which path is being followed can only be judged from new observed fixes; if the newest fix is many hours old, say so.'}; }},
  {name:'get_weather_forecast',description:'ECMWF and GFS forecast for a GP (or all GPs): rain next 72 h, rain last 24 h, max gust.',input_schema:{type:'object',properties:{gp:{type:'string'}}},
   run:({gp})=>{ if(!ST.wx) return {error:'forecasts not loaded'}; const one=g=>{const w=ST.wx.gp[g]; return {gp:g,ecmwf_rain_next72_mm:w.ec?Math.round(w.ec.next72):null,gfs_rain_next72_mm:w.gfs?Math.round(w.gfs.next72):null,rain_last24_mm:w.ec?Math.round(w.ec.last24):null,ecmwf_max_gust_kmh:w.ec?Math.round(w.ec.gmax):null,max_gust_time_ist:w.ec&&w.ec.gmaxT?fmtT(new Date(w.ec.gmaxT)):null};};
    if(gp){const g=findGP(gp); if(!g) return {error:'GP not found'}; return one(g);} return {updated_ist:fmtT(ST.wx.at),gps:gps.map(f=>one(f.properties.gp))};}},
@@ -1817,9 +1831,9 @@ const AI_TOOLS=[
 ];
 function aiSystem(){ return `You are the AI assistant inside the Pipili GIS Decision Support Portal, used by the Pipili block (Puri district, Odisha) control room during Cyclone Akvan. Officers ask operational questions; answer from the portal's data by calling tools, and use tools to show things on the map (zoom, highlight, open modules, layers, run scenarios).
 Rules: always use tools for facts and numbers; never invent figures. Keep answers short and practical (bullets fine), lead with the answer, give numbers with units and IST times. When you show something on the map, say so. Reply in the officer's language (English, Odia or Hindi). Model outputs are planning estimates: say so briefly when giving flood or risk numbers, and defer to IMD, SRC and Collector orders. If data is missing (e.g. elevation not loaded), say what is missing.
-Current time: ${fmtT(new Date())} IST. Track: ${ST.track.label}.`; }
+Each officer message starts with the current IST time in brackets. To answer which path the storm is following (IMD normal, JTWC or worst case), call compare_tracks and explain using the latest observed fixes; say plainly when the newest official fix is old. To show a scenario on the map, call set_cyclone_view.`; }
 async function aiCall(messages){ const key=P.settings.akey, relay=!key&&SITE.aiRelay; const r=await fetch(relay||'https://api.anthropic.com/v1/messages',{method:'POST',headers:relay?{'content-type':'application/json'}:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-  body:JSON.stringify({model:P.settings.amodel||'claude-sonnet-5-5',max_tokens:1500,system:aiSystem(),tools:AI_TOOLS.map(({name,description,input_schema})=>({name,description,input_schema})),messages})});
+  body:JSON.stringify({model:P.settings.amodel||'claude-sonnet-5-5',max_tokens:2000,system:AI.sys||(AI.sys=aiSystem()),tools:AI_TOOLS.map(({name,description,input_schema})=>({name,description,input_schema})),messages})});
   const j=await r.json(); if(!r.ok) throw new Error((j.error&&j.error.message)||('HTTP '+r.status)); return j; }
 function aiAdd(role,html){ const box=$('aiLog'); const d=document.createElement('div'); d.className='aimsg '+role; d.innerHTML=html; box.appendChild(d); box.scrollTop=box.scrollHeight; return d; }
 function mdLite(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/^#{1,3} (.+)$/gm,'<b>$1</b>').replace(/^[-•] (.+)$/gm,'<div class="li">• $1</div>').replace(/<\/div>\n/g,'</div>').replace(/\n/g,'<br>'); }
@@ -1827,7 +1841,7 @@ async function aiAsk(q){
   if(AI.busy||!q.trim()) return; aiAdd('user',esc(q)); $('aiIn').value='';
   AI.busy=true; const think=aiAdd('bot','<span class="note">Thinking…</span>');
   if(!ST.risk){ think.innerHTML='<span class="note">Preparing village risk analysis (first time only)…</span>'; await ensureRisk(); }
-  if(!P.settings.akey&&!SITE.aiRelay){ try{ think.innerHTML=localCommand(q); }catch(e){ think.innerHTML=esc('Could not do that: '+e.message); } AI.busy=false; return; } AI.msgs.push({role:'user',content:q});
+  if(!P.settings.akey&&!SITE.aiRelay){ try{ think.innerHTML=localCommand(q); }catch(e){ think.innerHTML=esc('Could not do that: '+e.message); } AI.busy=false; return; } AI.msgs.push({role:'user',content:`[${fmtT(new Date())} IST] ${q}`});
   try{ for(let step=0;step<8;step++){ const res=await aiCall(AI.msgs); AI.msgs.push({role:'assistant',content:res.content});
       const uses=res.content.filter(c=>c.type==='tool_use'); const txt=res.content.filter(c=>c.type==='text').map(c=>c.text).join('\n');
       if(!uses.length){ think.innerHTML=mdLite(txt||'(no answer)'); break; }
@@ -1835,8 +1849,8 @@ async function aiAsk(q){
       const results=[]; for(const u of uses){ const tool=AI_TOOLS.find(t=>t.name===u.name); let out; try{ out=tool?await tool.run(u.input||{}):{error:'unknown tool'}; }catch(e){ out={error:String(e.message||e)}; }
         results.push({type:'tool_result',tool_use_id:u.id,content:JSON.stringify(out).slice(0,12000)}); }
       AI.msgs.push({role:'user',content:results}); }
-    if(AI.msgs.length>40) AI.msgs=AI.msgs.slice(-24).filter((m,i,a)=>!(i===0&&m.role!=='user'));
-  }catch(e){ think.innerHTML=`<span style="color:var(--sev)">AI error: ${esc(e.message)}</span><br><span class="note">Check the Anthropic API key on the Data tab, and the internet connection.</span>`; AI.msgs=[]; }
+    if(AI.msgs.length>40){ let k=AI.msgs.length-24; while(k<AI.msgs.length&&!(AI.msgs[k].role==='user'&&typeof AI.msgs[k].content==='string')) k++; AI.msgs=AI.msgs.slice(k); }
+  }catch(e){ think.innerHTML=`<span style="color:var(--sev)">AI error: ${esc(e.message)}</span><br><span class="note">Check the internet connection, then ask again (a new chat was started).</span>`; AI.msgs=[]; AI.sys=null; }
   AI.busy=false; }
 function localCommand(q){ return localCommand0(q)+'<div class="note" style="margin-top:6px">Simple mode, no AI key saved. Add the key on Data &amp; export for full answers.</div>'; }
 function localCommand0(q){ const s=q.toLowerCase();
@@ -1852,7 +1866,7 @@ function localCommand0(q){ const s=q.toLowerCase();
 $('aiFab').onclick=()=>{ $('aiBox').classList.toggle('hide'); if(!$('aiBox').classList.contains('hide')) $('aiIn').focus(); renderAiHint(); };
 $('aiClose').onclick=()=>$('aiBox').classList.add('hide');
 $('aiForm').onsubmit=e=>{e.preventDefault(); aiAsk($('aiIn').value);};
-$('aiNew').onclick=()=>{AI.msgs=[]; $('aiLog').innerHTML=''; AI.hl.clearLayers(); renderAiHint();};
+$('aiNew').onclick=()=>{AI.msgs=[]; AI.sys=null; $('aiLog').innerHTML=''; AI.hl.clearLayers(); renderAiHint();};
 function renderAiHint(){ if($('aiLog').children.length) return; const sug=['Which 10 villages are most at risk and why?','Zoom to Hatasahi and tell me its risk','What happens if 250 mm rain falls and the Bhargavi rises 1.5 m?','Which GPs should finish evacuation first?','When will squalls start in Teisipur?','Show the storm and open the radar'];
   aiAdd('bot',`<b>Ask about the cyclone, flooding, villages, GPs or shelters.</b> I can zoom the map, highlight villages, run scenarios and open tools.${P.settings.akey||SITE.aiRelay?'':'<br><span class="note">No AI key set: simple commands only. Add an Anthropic API key on the Data tab for full answers.</span>'}<div class="sugs">${sug.map(s=>`<button class="btn sug">${esc(s)}</button>`).join('')}</div>`);
   $('aiLog').querySelectorAll('.sug').forEach(b=>b.onclick=()=>aiAsk(b.textContent)); }
