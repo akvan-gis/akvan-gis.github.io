@@ -905,9 +905,9 @@ async function omJSON(url,ttlMin){ const k='om:'+url; try{ const c=JSON.parse(lo
   try{ for(let i=localStorage.length-1;i>=0;i--){ const kk=localStorage.key(i); if(kk&&kk.startsWith('om:')){ const c=JSON.parse(localStorage.getItem(kk)); if(Date.now()-c.t>6*3.6e6) localStorage.removeItem(kk); } } localStorage.setItem(k,JSON.stringify({t:Date.now(),d})); }catch(e){}
   return d; }
 const UNIT=DATA.unit||{kind:'block',id:'3544',name:'Pipili',district:'Puri',lat:20.115,lon:85.832};
-const STATE=UNIT.kind==='state', CHILD=STATE?'Block':'GP', CHILDREN=STATE?'blocks':'GPs';
-const TZ='Asia/Kolkata', PIPILI=STATE?{lat:20.296,lon:85.825}:{lat:UNIT.lat,lon:UNIT.lon}, HH=4.5, GUST=1.3;
-const UN=STATE?'Bhubaneswar':UNIT.name, UNITLBL=STATE?'Odisha':UNIT.name+' block';
+const ISSTATE=UNIT.kind==='state', ISDIST=UNIT.kind==='district', STATE=ISSTATE||ISDIST, CHILD=STATE?'Block':'GP', CHILDREN=STATE?'blocks':'GPs';
+const TZ='Asia/Kolkata', PIPILI=ISSTATE?{lat:20.296,lon:85.825}:{lat:UNIT.lat,lon:UNIT.lon}, HH=4.5, GUST=1.3;
+const UN=ISSTATE?'Bhubaneswar':ISDIST?UNIT.name+' district centre':UNIT.name, UNITLBL=ISSTATE?'Odisha':ISDIST?UNIT.name+' district':UNIT.name+' block';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const nf=n=>Math.round(n||0).toLocaleString('en-IN');
@@ -986,7 +986,7 @@ function renderLayers(){
   $('layerList').querySelectorAll('[data-ly]').forEach(c=>c.onchange=()=>toggleLayer(c.dataset.ly,c.checked));
 }
 // base admin layers
-const blockLayer=L.geoJSON(STATE?DATA.districts:{type:'Feature',geometry:DATA.block},{pane:'gp',interactive:false,style:{color:'#ffd166',weight:STATE?1.6:3,fill:false}});
+const blockLayer=L.geoJSON(ISSTATE?DATA.districts:{type:'Feature',geometry:DATA.block},{pane:'gp',interactive:false,style:{color:'#ffd166',weight:ISSTATE?1.6:3,fill:false}});
 let gpColorMode='none';
 const gpLayer=L.geoJSON(DATA.gps,{pane:'gp',style:gpStyle,onEachFeature:(f,l)=>{l.bindTooltip('',{sticky:true}); l.on('click',ev=>gpPopup(f.properties.gp,ev.latlng));}});
 function gpStyle(f){const g=f.properties.gp; let fill='transparent',op=0;
@@ -1000,10 +1000,11 @@ function villStyle(f){const p=f.properties, s=ST.sim&&ST.sim.v[p.i];
   if(ST.module==='risk'&&ST.risk&&ST.risk.v[p.i]){const r=ST.risk.v[p.i]; return {color:'#ffffff',weight:.6,opacity:.8,fillColor:RISKC[r.cat],fillOpacity:.6};}
   if(s&&s.frac>=.05){const r=s.frac; return {color:'#9fc5ff',weight:.6,opacity:.8,fillColor:r>.3?'#08306b':r>.15?'#2171b5':'#6baed6',fillOpacity:.45};}
   return {color:'#cfe3ff',weight:.5,opacity:.55,fillOpacity:0,fill:true};}
-regLayer('block',STATE?'District boundaries':'Block boundary','Administrative',blockLayer,true);
+regLayer('block',ISSTATE?'District boundaries':ISDIST?'District boundary':'Block boundary','Administrative',blockLayer,true);
 regLayer('gp',STATE?'Blocks (coloured by wind)':'Gram panchayats','Administrative',gpLayer,true);
 regLayer('gplbl',STATE?'Block names':'GP names','Administrative',gpLabels,true);
-if(!STATE) regLayer('vill','Villages (Census 2011)','Administrative',villLayer,true);
+if(villages.length) regLayer('vill','Villages (Census 2011)','Administrative',villLayer,!ISDIST);
+if(ISDIST&&DATA.gpAll) regLayer('gpb','Gram panchayat boundaries','Administrative',L.geoJSON(DATA.gpAll,{pane:'vill',interactive:false,style:{color:'#e9ecef',weight:.8,opacity:.6,fill:false,dashArray:'3 3'}}),true);
 map.fitBounds(gpLayer.getBounds(),{padding:[30,30]});
 setBase(baseKey);
 
@@ -1142,7 +1143,7 @@ function computeRiverDist(){ const segs=lineSegs(['river','canal']); for(const f
 async function loadWeather(){
   setSrc('wx','busy','Loading ECMWF and GFS forecasts for each GP…');
   try{ const cell=f=>(Math.round(f.properties.hqLat*4)/4).toFixed(2)+','+(Math.round(f.properties.hqLon*4)/4).toFixed(2); const keys=[...new Set(gps.map(cell))]; const LA=keys.map(k=>k.split(',')[0]), LO=keys.map(k=>k.split(',')[1]);
-    const get=async m=>{ if(STATE&&m!=='ecmwf_ifs025') return gps.map(()=>null); const out=[]; for(let c=0;c<LA.length;c+=100){ const la=LA.slice(c,c+100).join(','), lo=LO.slice(c,c+100).join(','); const j=await omJSON(`https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${lo}&hourly=precipitation,wind_gusts_10m&models=${m}&timezone=Asia%2FKolkata&past_days=1&forecast_days=4`,STATE?60:20); out.push(...(Array.isArray(j)?j:[j])); } const byKey={}; keys.forEach((k,i)=>byKey[k]=out[i]); return gps.map(f=>byKey[cell(f)]); }; const __unused=async m=>{const r=await fetch('',{}); if(!r.ok) throw new Error('HTTP '+r.status); const j=await r.json(); return Array.isArray(j)?j:[j];};
+    const get=async m=>{ if(ISSTATE&&m!=='ecmwf_ifs025') return gps.map(()=>null); const out=[]; for(let c=0;c<LA.length;c+=100){ const la=LA.slice(c,c+100).join(','), lo=LO.slice(c,c+100).join(','); const j=await omJSON(`https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${lo}&hourly=precipitation,wind_gusts_10m&models=${m}&timezone=Asia%2FKolkata&past_days=1&forecast_days=4`,STATE?60:20); out.push(...(Array.isArray(j)?j:[j])); } const byKey={}; keys.forEach((k,i)=>byKey[k]=out[i]); return gps.map(f=>byKey[cell(f)]); }; const __unused=async m=>{const r=await fetch('',{}); if(!r.ok) throw new Error('HTTP '+r.status); const j=await r.json(); return Array.isArray(j)?j:[j];};
     const [ec,gf]=await Promise.all([get('ecmwf_ifs025'),get('gfs_seamless')]);
     const now=Date.now(); const out={};
     gps.forEach((f,i)=>{const pack=(j)=>{ if(!j||!j.hourly) return null; const t=j.hourly.time.map(s=>IST(s).getTime()), pr=j.hourly.precipitation, gu=j.hourly.wind_gusts_10m;
@@ -1387,7 +1388,7 @@ function renderChips(){ const st=stormAt(ST.track,Date.now()), im=Object.values(
 function styleAdmin(){ gpLayer.setStyle(gpStyle); gpLayer.eachLayer(l=>{const g=l.feature.properties.gp, im=ST.gpImp[g]||{}, s=ST.sim&&ST.sim.gp[g], ev=DATA.gpState[g]||{};
   l.setTooltipContent(`<b>${esc(g)} GP</b><br>Population ${nf(gpPop[g])} (2011)<br>Peak gust ${Math.round(im.gPeak||0)} km/h · ${LVL[im.lvl||0].n} wind risk${s?`<br>What-if: ${nf(s.aff)} people in flooded areas`:''}<br>Evacuated: ${nf(ev.evacuated||0)} (board, ${DATA.snapshot})`);});
   villLayer.eachLayer(l=>{const p=l.feature.properties, im=ST.vImp[p.i]||{}, d=ST.grid&&ST.grid.vstats&&ST.grid.vstats[p.i], s=ST.sim&&ST.sim.v[p.i], a=ST.alloc&&ST.alloc.v[p.i];
-    l.setTooltipContent(`<b>${esc(p.name)}</b> · ${esc(p.gp)} GP<br>Population ${nf(p.pop)}${d?`<br>Ground ${d.mean.toFixed(1)} m · ${Math.round(d.lowPct)}% low-lying · ${Math.round(d.hand2)}% flood-prone`:''}${p.riverKm!=null?`<br>${p.riverKm<.1?'River/canal runs through village':p.riverKm.toFixed(1)+' km to river/canal'}`:''}<br>Peak gust ${Math.round(im.gPeak||0)} km/h${s?`<br><b>What-if:</b> ${Math.round(s.frac*100)}% flooded · ${nf(s.aff)} people · ${nf(s.hh)} households${s.maxD?` · up to ${s.maxD.toFixed(1)} m`:''}`:''}${a&&a.sh?`<br>Nearest shelter: ${esc(a.sh.name)} (${a.km.toFixed(1)} km)`:''}`);});}
+    l.setTooltipContent(`<b>${esc(p.name)}</b> · ${p.gpn?esc(p.gpn)+' GP, '+esc(p.gp)+' block':esc(p.gp)+' GP'}<br>Population ${nf(p.pop)}${d?`<br>Ground ${d.mean.toFixed(1)} m · ${Math.round(d.lowPct)}% low-lying · ${Math.round(d.hand2)}% flood-prone`:''}${p.riverKm!=null?`<br>${p.riverKm<.1?'River/canal runs through village':p.riverKm.toFixed(1)+' km to river/canal'}`:''}<br>Peak gust ${Math.round(im.gPeak||0)} km/h${s?`<br><b>What-if:</b> ${Math.round(s.frac*100)}% flooded · ${nf(s.aff)} people · ${nf(s.hh)} households${s.maxD?` · up to ${s.maxD.toFixed(1)} m`:''}`:''}${a&&a.sh?`<br>Nearest shelter: ${esc(a.sh.name)} (${a.km.toFixed(1)} km)`:''}`);});}
 function renderLegend(){ const on=k=>LY[k]&&LY[k].on&&LY[k].enabled; let h='';
   if(ST.module==='risk'&&ST.risk) h+=`<div class="row"><b>Village risk</b></div><div class="row">${Object.entries(RISKN).map(([k,n])=>`<span class="sw" style="background:${RISKC[k]}"></span>${n}`).join(' ')}</div>`;
   if(on('flood')) h+=`<div class="row"><b>What-if flood depth</b></div><div class="row"><span class="sw" style="background:#9ecbff"></span>0.3–0.7 m<span class="sw" style="background:#3d7fd6;margin-left:6px"></span>0.7–1.5 m<span class="sw" style="background:#0a3a8a;margin-left:6px"></span>1.5 m+</div>`;
@@ -1493,17 +1494,17 @@ function renderPanel(soft){ const el=$('panel'); const sc=el.scrollTop; el.inner
 function topRisk(){ return villages.map(f=>{const p=f.properties, im=ST.vImp[p.i]||{}, s=ST.sim&&ST.sim.v[p.i], d=ST.grid&&ST.grid.vstats&&ST.grid.vstats[p.i];
   const score=(im.gPeak||0)/100*2+(s?s.frac*4:0)+(d?d.hand2/100*1.5+d.lowPct/100:0); return {p,im,s,d,score};}).sort((a,b)=>b.score-a.score); }
 const ODIST=['Anugul','Balangir','Baleshwar','Balasore','Bargarh','Bhadrak','Boudh','Cuttack','Deogarh','Dhenkanal','Gajapati','Ganjam','Jagatsinghapur','Jajapur','Jharsuguda','Kalahandi','Kandhamal','Kendrapara','Kendujhar','Keonjhar','Khordha','Khurda','Koraput','Malkangiri','Mayurbhanj','Nabarangpur','Nayagarh','Nuapada','Puri','Rayagada','Sambalpur','Sonepur','Subarnapur','Sundargarh'];
-function relWarnings(){ const all=[...DATA.warnings].sort((a,b)=>IST(b.t)-IST(a.t)); if(STATE) return all; const d=normName(UNIT.district);
+function relWarnings(){ const all=[...DATA.warnings].sort((a,b)=>IST(b.t)-IST(a.t)); if(ISSTATE) return all; const d=normName(UNIT.district);
   return all.filter(w=>{ const t=normName(w.text); const named=ODIST.filter(x=>t.includes(normName(x))); return !named.length||named.some(x=>normName(x)===d)||t.includes(d); }); }
 const PANELS_STATE_OVERVIEW=()=>{ const st=stormAt(ST.track,Date.now()); const rows=gps.map(f=>({p:f.properties,...ST.gpImp[f.properties.gp]})).sort((a,b)=>b.gPeak-a.gPeak);
   const exp=(t)=>rows.filter(r=>r.gPeak>=t).reduce((a,r)=>a+r.p.pop2011,0); const W=[...DATA.warnings].sort((a,b)=>IST(b.t)-IST(a.t)).slice(0,5);
   const dists=[...new Set(gps.map(f=>f.properties.district))].sort();
-  return `<h2>Odisha situation</h2><p class="lead">Track: ${esc(ST.track.label)}. Every block is coloured by its expected peak gust on this track. Tap a block, or pick one below, to open its full portal (GPs, villages, flood what-if, village risk).</p>
+  return `<h2>${ISSTATE?'Odisha situation':esc(UNIT.name)+' district situation'}</h2><p class="lead">Track: ${esc(ST.track.label)}. Every block is coloured by its expected peak gust on this track. Tap a block, or pick one below, to open its full portal (GPs, villages, flood what-if, village risk).${ISDIST?` ${nf(villages.length)} villages and ${gps.length} blocks are loaded, so you can also ask the AI about any village in the district.`:''}</p>
   <div class="kpis"><div class="kpi sev"><b>${rows.filter(r=>r.gPeak>=80).length}</b><span>blocks with gusts 80+ km/h · ${nf(exp(80))} people</span></div>
    <div class="kpi"><b>${rows.filter(r=>r.gPeak>=60).length}</b><span>blocks with gusts 60+ km/h · ${nf(exp(60))} people</span></div>
    <div class="kpi"><b>${rows.filter(r=>r.gPeak>=40).length}</b><span>blocks with gusts 40+ km/h</span></div>
-   <div class="kpi"><b>${st?Math.round(st.v):'—'}</b><span>storm wind now (km/h)${st?' · '+Math.round(dist(st,PIPILI))+' km from Bhubaneswar':''}</span></div></div>
-  <h3>Open a block</h3><div class="card"><input type="search" id="blkSearch" placeholder="Type a block or district name…" autocomplete="off"><select id="blkDist" style="margin-top:6px"><option value="">All districts</option>${dists.map(d=>`<option>${esc(d)}</option>`).join('')}</select><div id="blkList" style="max-height:220px;overflow-y:auto;margin-top:6px"></div></div>
+   <div class="kpi"><b>${st?Math.round(st.v):'—'}</b><span>storm wind now (km/h)${st?' · '+Math.round(dist(st,PIPILI))+' km from '+esc(UN):''}</span></div></div>
+  ${ISSTATE?`<h3>Open a district</h3><div class="card"><div style="display:flex;flex-wrap:wrap;gap:4px">${(DATA.districtIndex||[]).map(d=>`<button class="btn" data-dist="${d.id}" style="font-size:12px">${esc(d.name)}</button>`).join('')}</div></div>`:''}<h3>Open a block</h3><div class="card"><input type="search" id="blkSearch" placeholder="Type a block${ISSTATE?' or district':''} name…" autocomplete="off"><select id="blkDist" style="margin-top:6px;${ISDIST?'display:none':''}"><option value="">All districts</option>${dists.map(d=>`<option>${esc(d)}</option>`).join('')}</select><div id="blkList" style="max-height:220px;overflow-y:auto;margin-top:6px"></div></div>
   <h3>Official warnings</h3>${W.map(w=>`<div class="warn"><i style="background:var(--${w.lvl||'mod'})"></i><div>${esc(w.text)}<small>${esc(w.src)} · ${fmtT(IST(w.t))} IST</small></div></div>`).join('')}
   <h3>Blocks most exposed to wind</h3><table><thead><tr><th>Block</th><th>District</th><th class="r">Pop.</th><th class="r">Gust</th><th>Squalls</th></tr></thead><tbody>${rows.slice(0,25).map(r=>`<tr data-blk="${r.p.id}" style="cursor:pointer"><td>${esc(r.p.gp)}</td><td>${esc(r.p.district)}</td><td class="r num">${nf(r.p.pop2011)}</td><td class="r num">${Math.round(r.gPeak)}</td><td class="num">${r.tOnset?fmtS(new Date(r.tOnset)):'—'}</td></tr>`).join('')}</tbody></table>
   <p class="note">Wind: Holland (1980) model on the selected track at each block's centre; populations are Census 2011 (rural). Planning aid only: IMD, SRC and Collector orders take precedence.</p>
@@ -1512,7 +1513,7 @@ function bindStateOverview(){ const list=$('blkList'); if(!list) return; const d
    const r=gps.map(f=>f.properties).filter(p=>(!d||p.district===d)&&(!q||normName(p.gp).includes(q)||normName(p.district).includes(q))).sort((a,b)=>a.gp.localeCompare(b.gp)).slice(0,80);
    list.innerHTML=r.map(p=>`<button class="btn" style="display:block;width:100%;text-align:left;margin:2px 0" data-blk="${p.id}">${esc(p.gp)} <span class="note">· ${esc(p.district)} · ${nf(p.pop2011)} people</span></button>`).join('')||'<p class="note">No match.</p>';
    list.querySelectorAll('[data-blk]').forEach(b=>b.onclick=()=>openBlock(b.dataset.blk)); };
-  $('blkSearch').oninput=draw; $('blkDist').onchange=draw; draw(); $('panel').querySelectorAll('tr[data-blk]').forEach(t=>t.onclick=()=>{ const f=gps.find(x=>x.properties.id===t.dataset.blk); openGP(f.properties.gp); }); }
+  $('blkSearch').oninput=draw; $('blkDist').onchange=draw; draw(); $('panel').querySelectorAll('[data-dist]').forEach(b=>b.onclick=()=>openDistrict(b.dataset.dist)); $('panel').querySelectorAll('tr[data-blk]').forEach(t=>t.onclick=()=>{ const f=gps.find(x=>x.properties.id===t.dataset.blk); openGP(f.properties.gp); }); }
 const PANELS={
 risk(){ const r=ST.risk; if(!r) return `<h2>Village risk</h2><p class="lead">Running the probability analysis…</p>`;
   const rows=villages.map(f=>({p:f.properties,...r.v[f.properties.i]})).sort((a,b)=>b.score-a.score);
@@ -1728,8 +1729,9 @@ function riskCsv(){ const r=ST.risk; const head=['Village','GP','Population 2011
 function villageGeo(){ const s=ST.sim, G=ST.grid; return JSON.stringify({type:'FeatureCollection',features:villages.map(f=>{const p=f.properties, im=ST.vImp[p.i]||{}, d=G&&G.vstats?G.vstats[p.i]:null, x=s?s.v[p.i]:null;
   return {type:'Feature',geometry:f.geometry,properties:{name:p.name,gp:p.gp,pop2011:p.pop,peak_gust_kmh:Math.round(im.gPeak||0),ground_m:d?+d.mean.toFixed(1):null,lowlying_pct:d?Math.round(d.lowPct):null,flood_prone_pct:d?Math.round(d.hand2):null,whatif_flooded_pct:x?Math.round(x.frac*100):null,whatif_people:x?x.aff:null,whatif_households:x?x.hh:null}};})}); }
 
-function openBlock(id){ const u=new URL(location.href); u.searchParams.set('b',id); location.href=u.toString(); }
-function openState(){ const u=new URL(location.href); u.searchParams.delete('b'); location.href=u.toString(); }
+function openBlock(id){ const u=new URL(location.href); u.searchParams.delete('d'); u.searchParams.set('b',id); location.href=u.toString(); }
+function openState(){ const u=new URL(location.href); u.searchParams.delete('b'); u.searchParams.delete('d'); location.href=u.toString(); }
+function openDistrict(id){ const u=new URL(location.href); u.searchParams.delete('b'); u.searchParams.set('d',id); location.href=u.toString(); }
 function gpPopup(g,ll){ const p=gps.find(f=>f.properties.gp===g).properties, im=ST.gpImp[g]||{}, s=ST.sim&&ST.sim.gp[g], ev=DATA.gpState[g]||{};
   if(STATE){ const el=L.popup({maxWidth:280}).setLatLng(ll).setContent(`<b>${esc(g)} block</b> · ${esc(p.district)} district<br>Population ${nf(p.pop2011)} (2011) · ${p.villages} villages · ${p.gpCount} GPs<br>Peak gust ${Math.round(im.gPeak||0)} km/h · ${LVL[im.lvl||0].n} wind risk${im.tOnset?`<br>Squalls from ${fmtS(new Date(im.tOnset))}`:''}
     <div style="margin-top:8px"><button class="btn primary" data-open="1">Open ${esc(g)} block portal</button></div>`).openOn(map).getElement(); el.querySelector('[data-open]').onclick=()=>openBlock(p.id); return; }
@@ -1739,7 +1741,7 @@ function gpPopup(g,ll){ const p=gps.find(f=>f.properties.gp===g).properties, im=
 function gmUrl(la,lo){return `https://www.google.com/maps/search/?api=1&query=${la.toFixed(6)},${lo.toFixed(6)}`;}
 function gmDir(a,b){return `https://www.google.com/maps/dir/?api=1&origin=${a.lat.toFixed(6)},${a.lon.toFixed(6)}&destination=${b.lat.toFixed(6)},${b.lon.toFixed(6)}&travelmode=driving`;}
 function villagePopup(i,ll){ const p=villages[i].properties, a=ST.alloc&&ST.alloc.v[i], s=ST.sim&&ST.sim.v[i];
-  L.popup({maxWidth:280}).setLatLng(ll).setContent(`<b>${esc(p.name)}</b> · ${esc(p.gp)} GP<br>Population ${nf(p.pop)} · about ${nf(p.pop/HH)} households${s?`<br>What-if: ${nf(s.aff)} people in flooded areas`:''}
+  L.popup({maxWidth:280}).setLatLng(ll).setContent(`<b>${esc(p.name)}</b> · ${p.gpn?esc(p.gpn)+' GP, '+esc(p.gp)+' block':esc(p.gp)+' GP'}<br>Population ${nf(p.pop)} · about ${nf(p.pop/HH)} households${s?`<br>What-if: ${nf(s.aff)} people in flooded areas`:''}
     <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px"><a href="${gmUrl(p.lat,p.lon)}" target="_blank" rel="noopener">Open village in Google Maps ↗</a>
     ${a&&a.sh?`<a href="${gmDir(p,a.sh)}" target="_blank" rel="noopener">Directions to ${esc(a.sh.name)} (${a.km.toFixed(1)} km) ↗</a>`:'<span style="color:#888">Add shelters to get directions</span>'}</div>`).openOn(map); }
 
@@ -1759,7 +1761,7 @@ async function autoRefresh(reason){
   try{
     await loadLive();
     // model forecasts change only every few hours; fetch at most every 15 min to stay within Open-Meteo's free limits
-    if(reason==='manual'||Date.now()-AUTO.wxLast>=(STATE?120:15)*60e3||ST.src.wx==='err'){ await loadWeather(); AUTO.wxLast=Date.now(); }
+    if(reason==='manual'||Date.now()-AUTO.wxLast>=(ISSTATE?120:15)*60e3||ST.src.wx==='err'){ await loadWeather(); AUTO.wxLast=Date.now(); }
     if(!WA.grid()||Date.now()-WA.grid().at>2*3.6e6) await WA.load();   // 529-point grid: keep well inside Open-Meteo's daily limit
     LY.imerg.layer.setUrl(imergUrl()); LY.viirs.layer.setUrl(viirsUrl());   // newest satellite rain and imagery
     if(!STATE&&(ST.src.osm==='err'||Date.now()-AUTO.osmLast>6*3.6e6)){ AUTO.osmLast=Date.now(); await loadOSM(); }   // retry OSM if it failed; else every 6 h
@@ -1797,7 +1799,7 @@ function findGP(q){ const n=normName(q); if(!n) return null; let best=null,bs=0;
 const GP_ALIAS={Orkal:['orakala','orakal'],Poporanga:['poparanga'],Gobindapur:['govindapur'],Birapurusotampur:['birapurusottampur'],Dandamukundapur:['dandamakundapur'],Rupadeipur:['rulpadeipur'],Pamasara:['pamsara'],Durgadaspur:['durgadasapur'],Sahajpur:['sahajapur'],Mangalpur:['mangalapur'],Panidol:['panidola']};
 function vInfo(p){ const i=p.i, im=ST.vImp[i]||{}, d=ST.grid&&ST.grid.vstats?ST.grid.vstats[i]:null, s=ST.sim&&ST.sim.v[i], r=ST.risk&&ST.risk.v[i], a=ST.alloc&&ST.alloc.v[i];
   const strip=t=>String(t).replace(/<[^>]+>/g,'');
-  return {village:p.name,gp:p.gp,population_2011:p.pop,households_est:Math.round(p.pop/HH),lat:+p.lat.toFixed(5),lon:+p.lon.toFixed(5),
+  return {village:p.name,gp:p.gpn||p.gp,...(p.gpn?{block:p.gp}:{}),population_2011:p.pop,households_est:Math.round(p.pop/HH),lat:+p.lat.toFixed(5),lon:+p.lon.toFixed(5),
     wind:{peak_gust_kmh:Math.round(im.gPeak||0),peak_time_ist:im.tPeak?fmtT(new Date(im.tPeak)):null,squalls_from_ist:im.tOnset?fmtT(new Date(im.tOnset)):null},
     terrain:d?{mean_ground_m:+d.mean.toFixed(1),lowest_ground_m:+d.min.toFixed(1),lowlying_pct:Math.round(d.lowPct),land_within_2m_of_river_pct:Math.round(d.hand2)}:'elevation not loaded',
     distance_to_river_or_canal_km:p.riverKm!=null?+p.riverKm.toFixed(2):null,
@@ -1821,17 +1823,19 @@ const AI_TOOLS=[
  {name:'get_situation',description:'Current overall situation: storm position and strength, landfall forecast, peak gust in the block, what-if flood totals, village risk counts, evacuation totals, official warnings, data source status.',input_schema:{type:'object',properties:{}},run:()=>situation()},
  {name:'open_block',description:'Open the full portal for a block anywhere in Odisha (its GPs, villages, flood what-if, village risk). The page reloads, so tell the officer first. Also use name "Odisha" to go back to the state view.',input_schema:{type:'object',properties:{name:{type:'string',description:'block name, optionally with district'}},required:['name']},
   run:({name})=>{ if(/^odisha|state/i.test(name)){ setTimeout(openState,1500); return {opening:'Odisha state view'}; } const idx=DATA.blockIndex||[]; const n=normName(name); let best=null,bs=0; for(const b of idx){ const a=normName(b.name), d=normName(b.district); const sc=(a===n||a+d===n)?100:n.startsWith(a)&&a.length>3?80:a.startsWith(n)?70:(a.includes(n)||n.includes(a))&&a.length>3?50:0; if(sc>bs){bs=sc;best=b;} } if(!best) return {error:'No block matches '+name}; setTimeout(()=>openBlock(best.id),1500); return {opening:best.name+' block, '+best.district+' district'}; }},
+ {name:'open_district',description:'Open the district view for an Odisha district (all its blocks and villages). The page reloads, so tell the officer first.',input_schema:{type:'object',properties:{name:{type:'string'}},required:['name']},
+  run:({name})=>{ const n=normName(name); const d=(DATA.districtIndex||[]).map(x=>[x,normName(x.name)]).find(([x,a])=>a===n||a.startsWith(n)||n.startsWith(a)); if(!d) return {error:'No district matches '+name}; setTimeout(()=>openDistrict(d[0].id),1500); return {opening:d[0].name+' district'}; }},
  {name:'find_village',description:'Look up a village by (partial or misspelt) name and return full details: population, households, wind timing, terrain, flood result, risk probabilities with reasons, nearest shelter. Optionally zoom the map to it.',input_schema:{type:'object',properties:{name:{type:'string'},zoom:{type:'boolean',description:'zoom map and highlight (default true)'}},required:['name']},
-  run:({name,zoom=true})=>{ if(STATE) return {error:'The state view has no villages loaded. Call open_block for the block that contains the village.'}; const m=findVillages(name,5); if(!m.length) return {error:'No village matches "'+name+'"'}; if(zoom){highlight([m[0]]); villagePopup(m[0].i,L.latLng(m[0].lat,m[0].lon));} return {match:vInfo(m[0]),other_matches:m.slice(1).map(p=>p.name+' ('+p.gp+')')};}},
+  run:({name,zoom=true})=>{ if(ISSTATE) return {error:'The state view has no villages loaded. Call open_block for the block that contains the village.'}; const m=findVillages(name,5); if(!m.length) return {error:'No village matches "'+name+'"'}; if(zoom){highlight([m[0]]); villagePopup(m[0].i,L.latLng(m[0].lat,m[0].lon));} return {match:vInfo(m[0]),other_matches:m.slice(1).map(p=>p.name+' ('+p.gp+')')};}},
  {name:'get_gp',description:'Summary for a gram panchayat (GP): population, villages, wind impact, evacuation figures, flood and risk for each of its villages. Optionally zoom to it.',input_schema:{type:'object',properties:{name:{type:'string'},zoom:{type:'boolean'}},required:['name']},
   run:({name,zoom=true})=>{const g=findGP(name); if(!g) return {error:'No GP matches "'+name+'"'}; const vs=villages.map(f=>f.properties).filter(p=>p.gp===g); if(zoom){openGP(g); highlight(vs,'#74c0fc');}
    const im=ST.gpImp[g]||{}, ev=DATA.gpState[g]||{}; return {gp:g,population_2011:gpPop[g],villages:vs.length,peak_gust_kmh:Math.round(im.gPeak||0),squalls_from_ist:im.tOnset?fmtT(new Date(im.tOnset)):null,wind_risk:LVL[im.lvl||0].n,evacuated:ev.evacuated||0,evac_status:ev.status||'not reported',
      whatif_people_affected:ST.sim?ST.sim.gp[g]?.aff||0:null,villages_detail:vs.map(p=>{const r=ST.risk&&ST.risk.v[p.i], s=ST.sim&&ST.sim.v[p.i]; return {name:p.name,pop:p.pop,risk:r?RISKN[r.cat]:null,chance_flood_pct:r&&r.pf!=null?Math.round(r.pf*100):null,chance_gust80_pct:r?Math.round(r.pw80*100):null,whatif_affected:s?s.aff:null};})};}},
- {name:'rank_villages',description:'Rank villages by a measure and highlight them on the map. by: risk | flood_chance | wind_chance | people_affected | lowlying | population | near_river. Optional gp filter and risk_level filter (Very high, High, Moderate, Low).',input_schema:{type:'object',properties:{by:{type:'string',enum:['risk','flood_chance','wind_chance','people_affected','lowlying','population','near_river']},limit:{type:'integer'},gp:{type:'string'},risk_level:{type:'string'},highlight:{type:'boolean'}},required:['by']},
+ {name:'rank_villages',description:'Rank villages by a measure and highlight them on the map. by: gust (expected peak gust on the current track; works in every view) | risk | flood_chance | wind_chance | people_affected | lowlying | population | near_river (risk, flood, lowlying and river measures need a block view). Optional gp filter (in the district view this filters by block) and risk_level filter (Very high, High, Moderate, Low).',input_schema:{type:'object',properties:{by:{type:'string',enum:['gust','risk','flood_chance','wind_chance','people_affected','lowlying','population','near_river']},limit:{type:'integer'},gp:{type:'string'},risk_level:{type:'string'},highlight:{type:'boolean'}},required:['by']},
   run:({by,limit=10,gp,risk_level,highlight:hl=true})=>{ let vs=villages.map(f=>f.properties); if(gp){const g=findGP(gp); vs=vs.filter(p=>p.gp===g);} if(risk_level&&ST.risk) vs=vs.filter(p=>RISKN[ST.risk.v[p.i].cat].toLowerCase()===risk_level.toLowerCase());
-   const key={risk:p=>ST.risk?ST.risk.v[p.i].score:0,flood_chance:p=>ST.risk?ST.risk.v[p.i].pf||0:0,wind_chance:p=>ST.risk?ST.risk.v[p.i].pw80:0,people_affected:p=>ST.sim?ST.sim.v[p.i]?.aff||0:0,lowlying:p=>ST.grid&&ST.grid.vstats[p.i]?ST.grid.vstats[p.i].lowPct:0,population:p=>p.pop,near_river:p=>p.riverKm==null?-99:-p.riverKm}[by];
+   const key={gust:p=>(ST.vImp[p.i]||{}).gPeak||0,risk:p=>ST.risk?ST.risk.v[p.i].score:0,flood_chance:p=>ST.risk?ST.risk.v[p.i].pf||0:0,wind_chance:p=>ST.risk?ST.risk.v[p.i].pw80:0,people_affected:p=>ST.sim?ST.sim.v[p.i]?.aff||0:0,lowlying:p=>ST.grid&&ST.grid.vstats[p.i]?ST.grid.vstats[p.i].lowPct:0,population:p=>p.pop,near_river:p=>p.riverKm==null?-99:-p.riverKm}[by]; if(!key) return {error:'Unknown measure '+by};
    const top=vs.sort((a,b)=>key(b)-key(a)).slice(0,Math.min(50,limit)); if(hl) highlight(top);
-   return {by,count_considered:vs.length,results:top.map(p=>{const r=ST.risk&&ST.risk.v[p.i], s=ST.sim&&ST.sim.v[p.i], d=ST.grid&&ST.grid.vstats[p.i]; return {village:p.name,gp:p.gp,pop:p.pop,risk:r?RISKN[r.cat]:null,flood_chance_pct:r&&r.pf!=null?Math.round(r.pf*100):null,gust80_chance_pct:r?Math.round(r.pw80*100):null,whatif_affected:s?s.aff:null,lowlying_pct:d?Math.round(d.lowPct):null,river_km:p.riverKm!=null?+p.riverKm.toFixed(2):null};})};}},
+   return {by,count_considered:vs.length,results:top.map(p=>{const r=ST.risk&&ST.risk.v[p.i], s=ST.sim&&ST.sim.v[p.i], d=ST.grid&&ST.grid.vstats[p.i]; return {village:p.name,gp:p.gpn||p.gp,...(p.gpn?{block:p.gp}:{}),pop:p.pop,peak_gust_kmh:Math.round((ST.vImp[p.i]||{}).gPeak||0),risk:r?RISKN[r.cat]:null,flood_chance_pct:r&&r.pf!=null?Math.round(r.pf*100):null,gust80_chance_pct:r?Math.round(r.pw80*100):null,whatif_affected:s?s.aff:null,lowlying_pct:d?Math.round(d.lowPct):null,river_km:p.riverKm!=null?+p.riverKm.toFixed(2):null};})};}},
  {name:'run_whatif_flood',description:'Run the what-if flood scenario and show it on the map. rain_mm (24 h rain), ponding_pct (share of rain that does not drain: 30 clear drains, 50 partly blocked, 70 blocked), river_rise_m (river level rise above normal, 0-5), use_forecast_rain (use ECMWF forecast per GP instead of rain_mm). Returns totals and most affected villages and GPs.',input_schema:{type:'object',properties:{rain_mm:{type:'number'},ponding_pct:{type:'number'},river_rise_m:{type:'number'},use_forecast_rain:{type:'boolean'}}},
   run:(a)=>{ if(!ST.grid) return {error:'Elevation data is not loaded, so flood scenarios cannot run.'}; const Pp=ST.simP; if(a.rain_mm!=null) Pp.rain=Math.max(0,Math.min(600,a.rain_mm)); if(a.ponding_pct!=null) Pp.keep=Math.max(0,Math.min(100,a.ponding_pct)); if(a.river_rise_m!=null) Pp.rise=Math.max(0,Math.min(5,a.river_rise_m)); if(a.use_forecast_rain!=null) Pp.useWx=!!a.use_forecast_rain&&!!ST.wx;
    runSim(); go('flood'); const vr=Object.entries(ST.sim.v).filter(([k,x])=>x.aff>0).sort((a,b)=>b[1].aff-a[1].aff); highlight(vr.slice(0,10).map(([k])=>villages[k].properties),'#4dabf7');
@@ -1869,7 +1873,7 @@ const AI_TOOLS=[
  {name:'open_windy',description:'Open the Windy live panel with an overlay: radar | satellite | rain | wind | gust.',input_schema:{type:'object',properties:{overlay:{type:'string',enum:['radar','satellite','rain','wind','gust']}}},run:({overlay='radar'})=>{P.settings.windyOv=overlay; $('windyOv').value=overlay; save(); openWindy(); return {opened:overlay};}},
  {name:'clear_highlights',description:'Remove AI highlight outlines from the map.',input_schema:{type:'object',properties:{}},run:()=>{AI.hl.clearLayers(); return {ok:true};}}
 ];
-function aiSystem(){ return `You are the AI assistant inside the Cyclone Akvan Odisha GIS Decision Portal, used by Odisha disaster control rooms. The portal is currently showing ${STATE?'the whole of Odisha (state view): each map unit is a block, and "GP" tools work on blocks; to work on villages, call open_block to switch to a block':esc(UNITLBL)+', '+esc(UNIT.district)+' district: map units are gram panchayats (GPs) and villages'}. Distances in tool results are measured from ${UN}. Officers ask operational questions; answer from the portal's data by calling tools, and use tools to show things on the map (zoom, highlight, open modules, layers, run scenarios).
+function aiSystem(){ return `You are the AI assistant inside the Cyclone Akvan Odisha GIS Decision Portal, used by Odisha disaster control rooms. The portal is currently showing ${ISSTATE?'the whole of Odisha (state view): each map unit is a block, and "GP" tools work on blocks; to work on villages, call open_district or open_block':ISDIST?esc(UNIT.name)+' district (district view): each map unit is a block, "GP" tools work on blocks, and all '+villages.length+' villages of the district are loaded (village results include their gram panchayat and block); flood, terrain and village-risk tools need a block: call open_block':esc(UNITLBL)+', '+esc(UNIT.district)+' district: map units are gram panchayats (GPs) and villages'}. Distances in tool results are measured from ${UN}. Officers ask operational questions; answer from the portal's data by calling tools, and use tools to show things on the map (zoom, highlight, open modules, layers, run scenarios).
 Rules: always use tools for facts and numbers; never invent figures. Keep answers short and practical (bullets fine), lead with the answer, give numbers with units and IST times. When you show something on the map, say so. Reply in the officer's language (English, Odia or Hindi). Model outputs are planning estimates: say so briefly when giving flood or risk numbers, and defer to IMD, SRC and Collector orders. If data is missing (e.g. elevation not loaded), say what is missing.
 Each officer message starts with the current IST time in brackets. To answer which path the storm is following (IMD normal, JTWC or worst case), call compare_tracks and explain using the latest observed fixes; say plainly when the newest official fix is old. To show a scenario on the map, call set_cyclone_view.`; }
 async function aiCall(messages){ const key=P.settings.akey, relay=!key&&SITE.aiRelay; const r=await fetch(relay||'https://api.anthropic.com/v1/messages',{method:'POST',headers:relay?{'content-type':'application/json'}:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
@@ -1911,7 +1915,7 @@ $('aiFab').onclick=()=>{ $('aiBox').classList.toggle('hide'); if(!$('aiBox').cla
 $('aiClose').onclick=()=>$('aiBox').classList.add('hide');
 $('aiForm').onsubmit=e=>{e.preventDefault(); aiAsk($('aiIn').value);};
 $('aiNew').onclick=()=>{AI.msgs=[]; AI.sys=null; $('aiLog').innerHTML=''; AI.hl.clearLayers(); renderAiHint();};
-function renderAiHint(){ if($('aiLog').children.length) return; const sug=STATE?['Which blocks will get the strongest winds and when?','Is the cyclone following the normal or worst-case path?','How many people live where gusts exceed 80 km/h?','Open Pipili block','Show the storm and open the radar']:(UNIT.id==='3544'?['Which 10 villages are most at risk and why?','Zoom to Hatasahi and tell me its risk','What happens if 250 mm rain falls and the Bhargavi rises 1.5 m?','Which GPs should finish evacuation first?','When will squalls start in Teisipur?','Show the storm and open the radar']:['Which 10 villages are most at risk and why?','Which GPs get squalls first?','What happens if 250 mm rain falls and rivers rise 1.5 m?','Is the cyclone following the normal or worst-case path?','Show the storm and open the radar']);
+function renderAiHint(){ if($('aiLog').children.length) return; const sug=ISDIST?['Which blocks in this district get the strongest winds and when?','Which 10 villages face the strongest gusts?','How many people live where gusts exceed 80 km/h?','Is the cyclone following the normal or worst-case path?','Show the storm and open the radar']:STATE?['Which blocks will get the strongest winds and when?','Is the cyclone following the normal or worst-case path?','How many people live where gusts exceed 80 km/h?','Open Pipili block','Show the storm and open the radar']:(UNIT.id==='3544'?['Which 10 villages are most at risk and why?','Zoom to Hatasahi and tell me its risk','What happens if 250 mm rain falls and the Bhargavi rises 1.5 m?','Which GPs should finish evacuation first?','When will squalls start in Teisipur?','Show the storm and open the radar']:['Which 10 villages are most at risk and why?','Which GPs get squalls first?','What happens if 250 mm rain falls and rivers rise 1.5 m?','Is the cyclone following the normal or worst-case path?','Show the storm and open the radar']);
   aiAdd('bot',`<b>Ask about the cyclone, flooding, villages, GPs or shelters.</b> I can zoom the map, highlight villages, run scenarios and open tools.${P.settings.akey||SITE.aiRelay?'':'<br><span class="note">No AI key set: simple commands only. Add an Anthropic API key on the Data tab for full answers.</span>'}<div class="sugs">${sug.map(s=>`<button class="btn sug">${esc(s)}</button>`).join('')}</div>`);
   $('aiLog').querySelectorAll('.sug').forEach(b=>b.onclick=()=>aiAsk(b.textContent)); }
 
@@ -1951,10 +1955,21 @@ applyMobile();
 
 /* ---------- header for the selected unit ---------- */
 (()=>{ const h=document.querySelector('.brand h1'), sm=document.querySelector('.brand small');
-  h.textContent='Akvan · Odisha Cyclone GIS Portal'; document.title=(STATE?'Odisha':UNIT.name+' block')+' · Akvan Odisha Cyclone GIS Portal';
-  sm.innerHTML=STATE?'State view · 314 blocks · tap a block to open it':`${esc(UNIT.name)} block, ${esc(UNIT.district)} district · <a href="#" id="toState" style="color:#7cc4ff">Odisha view</a>`;
+  h.textContent='Akvan · Odisha Cyclone GIS Portal'; document.title=UNITLBL+' · Akvan Odisha Cyclone GIS Portal';
+  const lk=(id,t)=>`<a href="#" id="${id}" style="color:#7cc4ff">${t}</a>`;
+  sm.innerHTML=ISSTATE?'State view · 314 blocks · tap a block to open it':ISDIST?`${esc(UNIT.name)} district · ${gps.length} blocks · ${lk('toState','Odisha view')}`:`${esc(UNIT.name)} block, ${UNIT.d?lk('toDist',esc(UNIT.district)+' district'):esc(UNIT.district)+' district'} · ${lk('toState','Odisha view')}`;
+  const td=$('toDist'); if(td) td.onclick=e=>{e.preventDefault(); openDistrict(UNIT.d);};
   const t=$('toState'); if(t) t.onclick=e=>{e.preventDefault(); openState();}; })();
 if(STATE){ for(const k of Object.keys(LY)) if(['Hydrology','Infrastructure','Terrain','What-if'].includes(LY[k].group)) delete LY[k]; renderLayers(); styleAdmin(); renderLegend(); }
+
+/* Unique visitor counter: a random id stays in this browser; the relay counts each id once (no personal data). */
+(async()=>{ try{ await SITE.ready; if(!SITE.aiRelay) return;
+  let id=null; try{ id=localStorage.getItem('akvanVid'); if(!id){ id=Array.from(crypto.getRandomValues(new Uint8Array(12)),b=>b.toString(36).padStart(2,'0')).join('').slice(0,24); localStorage.setItem('akvanVid',id); } }catch(e){ return; }
+  const r=await fetch(SITE.aiRelay+'?visit='+id); if(!r.ok) return; const c=await r.json(); if(!c.unique) return;
+  const sm=document.querySelector('.brand small'); if(!sm) return;
+  const s=document.createElement('span'); s.id='visits'; s.title=nf(c.views)+' page views in total'; s.style.cssText='margin-left:6px;opacity:.85;white-space:nowrap';
+  s.innerHTML='· 👁 '+nf(c.unique)+' unique visitors'; sm.appendChild(s);
+}catch(e){} })();
 </script>
 <script>
 /* Loader: picks the Odisha state view or one block from the address (?b=<LGD block code>), fetches its data, then starts the portal. */
@@ -1962,19 +1977,30 @@ if(STATE){ for(const k of Object.keys(LY)) if(['Hydrology','Infrastructure','Ter
   const D=JSON.parse(document.getElementById('pdata').textContent);
   const ALIAS={Rupadeipur:'Rulpadeipur',Dandamukundapur:'Dhandamakundapur'};
   const fixGP=o=>{const r={}; for(const k in (o||{})) r[ALIAS[k]||k]=o[k]; return r;}; window.__fixGP=fixGP;
-  const http=/^https?:/.test(location.protocol), b=new URLSearchParams(location.search).get('b');
+  const qp=new URLSearchParams(location.search), http=/^https?:/.test(location.protocol), b=qp.get('b'), dq=b?null:qp.get('d');
+  { const m={}; for(const x of (D.blockIndex||[])) m[x.d]=m[x.d]||x.district; D.districtIndex=Object.keys(m).map(id=>({id,name:m[id]})).sort((p,q)=>p.name.localeCompare(q.name)); }
   const busy=document.getElementById('busy'); const say=m=>{ if(busy){ busy.textContent=m; busy.classList.remove('hide'); } };
   const j=async u=>{ const r=await fetch(u); if(!r.ok) throw new Error(u+' HTTP '+r.status); return r.json(); };
   try{
     if(http&&b){ const m=(D.blockIndex||[]).find(x=>x.id===b); if(!m) throw new Error('Unknown block '+b);
       say('Loading '+m.name+' block…'); const k=(await j('data/d/'+m.d+'.json'))[b];
-      D.gps=k.gps; D.villages=k.villages; D.block=k.block; D.unit={kind:'block',id:b,name:k.name,district:k.district,lat:m.lat,lon:m.lon};
+      D.gps=k.gps; D.villages=k.villages; D.block=k.block; D.unit={kind:'block',id:b,d:m.d,name:k.name,district:k.district,lat:m.lat,lon:m.lon};
       D.gpState=b==='3544'?fixGP(D.gpState):{};
+    } else if(http&&dq){ const dn=(D.districtIndex.find(x=>x.id===dq)||{}).name; if(!dn) throw new Error('Unknown district '+dq);
+      say('Loading '+dn+' district…'); const [st,dd]=await Promise.all([j('data/state.json'),j('data/d/'+dq+'.json')]);
+      const meta={}; for(const f of st.blocks.features) meta[f.properties.id]=f.properties;
+      const gps=[],vil=[],gpAll=[]; let la=0,lo=0,n=0;
+      for(const id in dd){ const k=dd[id], p=meta[id]||{name:k.name}; gps.push({type:'Feature',geometry:k.block,properties:{gp:p.label||p.name||k.name,id,district:dn,hq:p.name||k.name,villages:p.villages,gpCount:p.gps,pop2011:p.pop,hqLat:p.lat,hqLon:p.lon,areaKm2:p.areaKm2}});
+        for(const v of k.villages.features) vil.push({type:'Feature',geometry:v.geometry,properties:{...v.properties,gp:p.label||k.name,gpn:v.properties.gp}});
+        for(const g of k.gps.features) gpAll.push(g); if(p.lat){la+=p.lat;lo+=p.lon;n++;} }
+      const df=st.districts.features.find(f=>f.properties.id===dq);
+      D.gps={type:'FeatureCollection',features:gps}; D.villages={type:'FeatureCollection',features:vil}; D.gpAll={type:'FeatureCollection',features:gpAll};
+      D.block=df?df.geometry:null; D.unit={kind:'district',id:dq,name:dn,district:dn,lat:n?la/n:20.3,lon:n?lo/n:85.8}; D.gpState={};
     } else if(http){ say('Loading Odisha…'); const st=await j('data/state.json');
       D.gps={type:'FeatureCollection',features:st.blocks.features.map(f=>{const p=f.properties; return {type:'Feature',geometry:f.geometry,properties:{gp:p.label||p.name,id:p.id,district:p.district,hq:p.name,villages:p.villages,gpCount:p.gps,pop2011:p.pop,hqLat:p.lat,hqLon:p.lon,areaKm2:p.areaKm2}};})};
       D.villages={type:'FeatureCollection',features:[]}; D.districts=st.districts; D.block=null; D.unit={kind:'state',name:'Odisha'}; D.gpState={};
     }
-  }catch(e){ console.warn('Falling back to the built-in Pipili data:',e); say('Could not load '+(b?'that block':'Odisha')+' ('+e.message+'). Showing Pipili.'); setTimeout(()=>busy&&busy.classList.add('hide'),5000); }
+  }catch(e){ console.warn('Falling back to the built-in Pipili data:',e); say('Could not load '+(b?'that block':dq?'that district':'Odisha')+' ('+e.message+'). Showing Pipili.'); setTimeout(()=>busy&&busy.classList.add('hide'),5000); }
   window.__DATA=D; if(busy&&!/Could not/.test(busy.textContent)) busy.classList.add('hide');
   const s=document.createElement('script'); s.textContent=document.getElementById('appsrc').textContent; document.body.appendChild(s);
 })();
